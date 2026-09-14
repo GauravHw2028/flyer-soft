@@ -2,7 +2,7 @@ export type Product={id:string;name:string;pack:string;category:string;price:num
 export type Offer=Product & {offer:number;badge:string};
 export type Brand={name:string;address:string;phone:string;currency:string;color:string;logo:string;terms:string};
 export type Campaign={id:string;name:string;headline:string;start:string;end:string;template:string;templateSnapshot?:Template;items:Offer[];brand:Brand;updated:string;status:'draft'|'ready'};
-export type Template={id:string;name:string;color:string;accent:string;columns:number;capacity:number;style:string};
+export type Template={id:string;name:string;color:string;accent:string;columns:number;capacity:number;style:string;artwork?:string};
 export const templates:Template[]=[
  {id:'fresh',name:'Fresh market',color:'#166534',accent:'#f5d54b',columns:3,capacity:6,style:'fresh'},
  {id:'bold',name:'Big deal energy',color:'#d62e35',accent:'#ffda43',columns:3,capacity:9,style:'bold'},
@@ -10,6 +10,9 @@ export const templates:Template[]=[
  {id:'minimal',name:'The essentials',color:'#272b29',accent:'#e9ece7',columns:2,capacity:4,style:'minimal'},
  {id:'citrus',name:'Weekend sunshine',color:'#ba4e10',accent:'#ffde73',columns:3,capacity:6,style:'citrus'},
  {id:'blue',name:'Everyday value',color:'#164db0',accent:'#bde7ff',columns:3,capacity:9,style:'blue'},
+ {id:'artisan-market-v1',name:'Artisan market',color:'#4b1230',accent:'#e8c487',columns:3,capacity:6,style:'artisan',artwork:'/templates/artisan-higgsfield.png'},
+ {id:'deli-edit-v1',name:'The deli edit',color:'#4b1230',accent:'#b68d50',columns:2,capacity:4,style:'editorial',artwork:'/templates/artisan-higgsfield.png'},
+ {id:'weekend-collection-v1',name:'Weekend collection',color:'#38172c',accent:'#e8c487',columns:3,capacity:9,style:'boutique',artwork:'/templates/artisan-higgsfield.png'},
 ];
 export const defaultBrand:Brand={name:'GREEN BASKET',address:'Your neighborhood supermarket',phone:'',currency:'AED',color:'#166534',logo:'',terms:'Offers valid while stocks last. Images are for illustration.'};
 export const sampleProducts:Product[]=[

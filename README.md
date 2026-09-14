@@ -5,7 +5,7 @@ A private supermarket flyer studio with a persistent product library, image uplo
 ## Features
 
 - Product CRUD, batch image uploads and CSV preview/import.
-- Six starter templates plus saved custom color/grid templates.
+- Nine starter templates, including three layouts with Higgsfield artwork, plus saved custom color/grid templates.
 - Campaign-specific product, price, brand and template snapshots.
 - Autosave with revision checks, undo/redo, duplication and history.
 - One SVG renderer for the preview and A4 multipage exports.
@@ -34,3 +34,4 @@ Each validated workspace document is stored in D1 keyed by owner, with a revisio
 This deployment is owner-private. Customer onboarding, paid subscriptions, shared store memberships, POS integrations and background removal are not included. PDF uses raster pages in RGB, with no bleed or CMYK preflight. SVG text stays scalable. Full Arabic and bilingual typesetting has not been verified. Images remain stored when a product is removed, preserving campaigns. Upload limit: 8 MB; export limit: 18 MB. Workspace backup downloads contain records and asset references, not copies of image bytes.
 
 Photo sources: `public/products/SOURCES.md`. Sample names and prices are illustrative.
+
