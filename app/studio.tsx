@@ -26,6 +26,8 @@ import {
   Save,
   AlertCircle,
   X,
+  Move,
+  LayoutGrid,
 } from "lucide-react";
 import {
   SidebarProvider,
@@ -83,6 +85,7 @@ import {
   Brand,
   Template,
   Offer,
+  Box,
 } from "./model";
 import { useWorkspace } from "./use-workspace";
 import { flyerSvg, exportFlyer, campaignIssues, downloadBlob } from "./flyer";
@@ -95,7 +98,18 @@ import {
   EnhanceButton,
 } from "./business-ui";
 import { wearMartTemplates, wearMartBrand } from "./wear-mart";
-import { pageCount, slotNumber } from "./flyer-layout";
+import {
+  pageCount,
+  slotNumber,
+  pageRects,
+  fitBox,
+  Rect,
+  PAGE_W,
+  PAGE_H,
+  clamp,
+  MIN_BOX_W,
+  MIN_BOX_H,
+} from "./flyer-layout";
 import { productSchema } from "./validation";
 
 const uid = () => crypto.randomUUID();
@@ -215,6 +229,305 @@ function parseCsv(input: string) {
   });
 }
 
+type LayoutEntry = { slot: number; box: Rect; offer?: Offer };
+
+const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
+const HANDLE_CURSOR: Record<string, string> = {
+  nw: "nwse-resize",
+  n: "ns-resize",
+  ne: "nesw-resize",
+  e: "ew-resize",
+  se: "nwse-resize",
+  s: "ns-resize",
+  sw: "nesw-resize",
+  w: "ew-resize",
+};
+
+function handlePoint(mode: string, box: Rect) {
+  const midX = box.x + box.w / 2,
+    midY = box.y + box.h / 2;
+  return {
+    x: mode.includes("w") ? box.x : mode.includes("e") ? box.x + box.w : midX,
+    y: mode.includes("n") ? box.y : mode.includes("s") ? box.y + box.h : midY,
+  };
+}
+
+/**
+ * Drag-and-drop layer for product cards. It renders on top of the flyer so a
+ * drag stays smooth: only this layer re-renders while the pointer moves, and
+ * the finished position is written to the campaign once on release.
+ */
+function LayoutLayer({
+  entries,
+  color,
+  accent,
+  currency,
+  onSelect,
+  onCommit,
+}: {
+  entries: LayoutEntry[];
+  color: string;
+  accent: string;
+  currency: string;
+  onSelect: (slot: number) => void;
+  onCommit: (slot: number, box: Box | null) => void;
+}) {
+  const ref = useRef<SVGSVGElement>(null);
+  const drag = useRef<{
+    mode: string;
+    slot: number;
+    origin: Box;
+    from: { x: number; y: number };
+    box: Box;
+  } | null>(null);
+  const [live, setLive] = useState<{ slot: number; box: Box } | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
+
+  function units(clientX: number, clientY: number) {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect || !rect.width || !rect.height) return { x: 0, y: 0 };
+    return {
+      x: ((clientX - rect.left) / rect.width) * PAGE_W,
+      y: ((clientY - rect.top) / rect.height) * PAGE_H,
+    };
+  }
+
+  function down(e: React.PointerEvent<SVGSVGElement>) {
+    const target = e.target as Element;
+    const add = target.closest("[data-box-add]");
+    if (add) {
+      onSelect(Number(add.getAttribute("data-box-add")));
+      return;
+    }
+    const handle = target.closest("[data-box-handle]");
+    const body = target.closest("[data-box-move]");
+    const el = handle || body;
+    if (!el) return;
+    const slot = Number(el.getAttribute("data-slot"));
+    const entry = entries.find((s) => s.slot === slot);
+    if (!entry?.offer) return;
+    e.stopPropagation();
+    e.preventDefault();
+    setSelected(slot);
+    drag.current = {
+      mode: handle ? String(handle.getAttribute("data-box-handle")) : "move",
+      slot,
+      origin: { ...entry.box },
+      from: units(e.clientX, e.clientY),
+      box: { ...entry.box },
+    };
+    setLive({ slot, box: { ...entry.box } });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function move(e: React.PointerEvent<SVGSVGElement>) {
+    const state = drag.current;
+    if (!state) return;
+    const at = units(e.clientX, e.clientY),
+      dx = at.x - state.from.x,
+      dy = at.y - state.from.y,
+      snap = (v: number) => Math.round(v / 2) * 2,
+      o = state.origin;
+    let next: Box = { ...o };
+    if (state.mode === "move") next = { ...o, x: snap(o.x + dx), y: snap(o.y + dy) };
+    else {
+      let { x, y, w, h } = o;
+      if (state.mode.includes("w")) {
+        x = clamp(6, snap(o.x + dx), o.x + o.w - MIN_BOX_W);
+        w = o.x + o.w - x;
+      }
+      if (state.mode.includes("e"))
+        w = clamp(MIN_BOX_W, snap(o.w + dx), PAGE_W - 6 - o.x);
+      if (state.mode.includes("n")) {
+        y = clamp(6, snap(o.y + dy), o.y + o.h - MIN_BOX_H);
+        h = o.y + o.h - y;
+      }
+      if (state.mode.includes("s"))
+        h = clamp(MIN_BOX_H, snap(o.h + dy), PAGE_H - 6 - o.y);
+      next = { x, y, w, h };
+    }
+    const box = fitBox(next);
+    state.box = box;
+    setLive({ slot: state.slot, box });
+  }
+
+  function up(e: React.PointerEvent<SVGSVGElement>) {
+    const state = drag.current;
+    drag.current = null;
+    setLive(null);
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId))
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    if (!state) return;
+    const o = state.origin,
+      b = state.box;
+    if (b.x !== o.x || b.y !== o.y || b.w !== o.w || b.h !== o.h)
+      onCommit(state.slot, b);
+  }
+
+  function key(e: React.KeyboardEvent<SVGSVGElement>) {
+    if (e.key === "Escape") return setSelected(null);
+    if (selected === null) return;
+    const step = e.shiftKey ? 10 : 2;
+    const delta: Record<string, [number, number]> = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    };
+    const d = delta[e.key];
+    if (!d) return;
+    const entry = entries.find((s) => s.slot === selected);
+    if (!entry) return;
+    e.preventDefault();
+    onCommit(
+      selected,
+      fitBox({ ...entry.box, x: entry.box.x + d[0], y: entry.box.y + d[1] }),
+    );
+  }
+
+  return (
+    <svg
+      ref={ref}
+      className="layout-layer"
+      viewBox={`0 0 ${PAGE_W} ${PAGE_H}`}
+      fontFamily="Arial,Helvetica,sans-serif"
+      role="application"
+      aria-label="Move and resize product cards"
+      tabIndex={0}
+      style={{ pointerEvents: "none" }}
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
+      onPointerCancel={up}
+      onKeyDown={key}
+    >
+      {[...entries]
+        .sort(
+          (a, b) =>
+            Number(a.slot === selected || a.slot === live?.slot) -
+            Number(b.slot === selected || b.slot === live?.slot),
+        )
+        .map(({ slot, box, offer }) => {
+        const b = live?.slot === slot ? live.box : box,
+          chosen = selected === slot,
+          active = live?.slot === slot;
+        return (
+          <g key={slot}>
+            <rect
+              x={b.x}
+              y={b.y}
+              width={b.w}
+              height={b.h}
+              rx={4}
+              fill={
+                !offer
+                  ? "rgba(20,90,64,.07)"
+                  : active
+                    ? "#ffffff"
+                    : "rgba(255,255,255,.16)"
+              }
+              stroke={chosen ? accent : color}
+              strokeWidth={chosen ? 3 : 1.6}
+              strokeDasharray={offer ? "7 5" : "4 6"}
+            />
+            {!offer && (
+              <text
+                x={b.x + b.w / 2}
+                y={b.y + b.h / 2}
+                textAnchor="middle"
+                fontSize="15"
+                fill="#3f6d57"
+              >
+                + Choose product
+              </text>
+            )}
+            {offer && active && (
+              <>
+                {offer.image && (
+                  <image
+                    href={offer.image}
+                    x={b.x + 8}
+                    y={b.y + 8}
+                    width={Math.max(8, b.w - 16)}
+                    height={Math.max(8, b.h - 54)}
+                    preserveAspectRatio="xMidYMid meet"
+                    opacity=".92"
+                  />
+                )}
+                <text
+                  x={b.x + b.w / 2}
+                  y={b.y + b.h - 32}
+                  textAnchor="middle"
+                  fontSize={clamp(9, b.w * 0.06, 15)}
+                  fill="#2b3a33"
+                >
+                  {offer.name.slice(0, 26)}
+                </text>
+                <text
+                  x={b.x + b.w - 12}
+                  y={b.y + b.h - 10}
+                  textAnchor="end"
+                  fontSize={clamp(11, b.w * 0.09, 22)}
+                  fontWeight="800"
+                  fill={color}
+                >
+                  {currency} {offer.offer.toFixed(2)}
+                </text>
+              </>
+            )}
+            {offer ? (
+              <rect
+                data-box-move="1"
+                data-slot={slot}
+                x={b.x}
+                y={b.y}
+                width={b.w}
+                height={b.h}
+                fill="transparent"
+                style={{ pointerEvents: "auto", cursor: "move" }}
+              />
+            ) : (
+              <rect
+                data-box-add={slot}
+                x={b.x}
+                y={b.y}
+                width={b.w}
+                height={b.h}
+                fill="transparent"
+                style={{ pointerEvents: "auto", cursor: "pointer" }}
+              />
+            )}
+            {chosen &&
+              offer &&
+              HANDLES.map((mode) => {
+                const point = handlePoint(mode, b);
+                return (
+                  <rect
+                    key={mode}
+                    data-box-handle={mode}
+                    data-slot={slot}
+                    x={point.x - 9}
+                    y={point.y - 9}
+                    width={18}
+                    height={18}
+                    rx={4}
+                    fill="#ffffff"
+                    stroke={color}
+                    strokeWidth="3"
+                    style={{
+                      pointerEvents: "auto",
+                      cursor: HANDLE_CURSOR[mode],
+                    }}
+                  />
+                );
+              })}
+          </g>
+        );
+        })}
+    </svg>
+  );
+}
+
 export default function Studio() {
   const w = useWorkspace();
   const { data, update } = w;
@@ -243,6 +556,7 @@ export default function Studio() {
     } | null>(null);
   const [undo, setUndo] = useState<Campaign[]>([]),
     [redo, setRedo] = useState<Campaign[]>([]),
+    [layoutMode, setLayoutMode] = useState(false),
     [newTemplate, setNewTemplate] = useState<Template>({
       ...templates[0],
       id: "",
@@ -548,6 +862,39 @@ export default function Studio() {
     const used = new Set(current.items.map((_, i) => slotNumber(current, i)));
     for (let i = 0; i < 120; i++) if (!used.has(i)) return i;
     return 119;
+  }
+  const pageOffset = actualPage * template.capacity;
+  const layoutEntries: LayoutEntry[] = pageRects(
+    current,
+    template,
+    actualPage,
+  ).map((box, i) => ({
+    slot: pageOffset + i,
+    box,
+    offer: current.items.find(
+      (_, j) => slotNumber(current, j) === pageOffset + i,
+    ),
+  }));
+  function setBoxAt(slot: number, box: Box | null) {
+    const index = current.items.findIndex(
+      (_, i) => slotNumber(current, i) === slot,
+    );
+    if (index < 0) return;
+    changeItem(index, { box: box ? fitBox(box) : undefined });
+  }
+  function resetAllBoxes() {
+    if (!current.items.some((p) => p.box)) {
+      toast("Every card is already on the template grid");
+      return;
+    }
+    edit({
+      items: current.items.map((p) => {
+        const copy: Offer = { ...p };
+        delete copy.box;
+        return copy;
+      }),
+    });
+    toast.success("All cards returned to the template grid");
   }
   function backup() {
     downloadBlob(
@@ -1054,6 +1401,38 @@ export default function Studio() {
                         <Plus size={15} />
                         Create template
                       </button>
+                      <div className="panel-heading">
+                        <div>
+                          <h3>Card layout</h3>
+                          <p>Place and size each card yourself</p>
+                        </div>
+                      </div>
+                      <div className="layout-actions">
+                        <button
+                          className={
+                            "button small" + (layoutMode ? " active" : "")
+                          }
+                          aria-pressed={layoutMode}
+                          disabled={!canEdit}
+                          onClick={() => setLayoutMode((v) => !v)}
+                        >
+                          <Move size={15} />
+                          {layoutMode ? "Done arranging" : "Arrange cards"}
+                        </button>
+                        <button
+                          className="button small"
+                          disabled={!canEdit}
+                          onClick={resetAllBoxes}
+                        >
+                          <LayoutGrid size={15} />
+                          Even grid
+                        </button>
+                      </div>
+                      <p className="help-text">
+                        Cards start on the template grid. Drag one, or pull a
+                        handle to resize it, and the arrangement is saved with
+                        this campaign.
+                      </p>
                     </TabsContent>
                     <TabsContent value="details">
                       <div className="panel-heading">
@@ -1185,19 +1564,59 @@ export default function Studio() {
                       PAGE {actualPage + 1} OF {pages}
                     </span>
                   </div>
-                  <div
-                    className="flyer-svg interactive-flyer"
-                    onClick={(e) => chooseSlot(e.target)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        chooseSlot(e.target);
-                      }
-                    }}
-                    dangerouslySetInnerHTML={{
-                      __html: flyerSvg(current, template, actualPage, {}, true),
-                    }}
-                  />
+                  <div className="canvas-tools">
+                    <button
+                      className={"button small" + (layoutMode ? " active" : "")}
+                      disabled={!canEdit}
+                      aria-pressed={layoutMode}
+                      onClick={() => setLayoutMode((v) => !v)}
+                    >
+                      <Move size={15} />
+                      {layoutMode ? "Done arranging" : "Arrange cards"}
+                    </button>
+                    {layoutMode && (
+                      <button
+                        className="button small"
+                        disabled={!canEdit}
+                        onClick={resetAllBoxes}
+                      >
+                        <LayoutGrid size={15} />
+                        Even grid
+                      </button>
+                    )}
+                  </div>
+                  <div className="flyer-stage">
+                    <div
+                      className="flyer-svg interactive-flyer"
+                      onClick={(e) => !layoutMode && chooseSlot(e.target)}
+                      onKeyDown={(e) => {
+                        if (layoutMode) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          chooseSlot(e.target);
+                        }
+                      }}
+                      dangerouslySetInnerHTML={{
+                        __html: flyerSvg(
+                          current,
+                          template,
+                          actualPage,
+                          {},
+                          !layoutMode,
+                        ),
+                      }}
+                    />
+                    {layoutMode && canEdit && (
+                      <LayoutLayer
+                        entries={layoutEntries}
+                        color={template.color}
+                        accent={template.accent}
+                        currency={current.brand.currency}
+                        onSelect={(s) => setSlot(s)}
+                        onCommit={(s, b) => setBoxAt(s, b)}
+                      />
+                    )}
+                  </div>
                   <div className="pagination-controls">
                     <button
                       className="icon-button"
@@ -1220,8 +1639,17 @@ export default function Studio() {
                     </button>
                   </div>
                   <div className="canvas-note">
-                    <Check size={14} />
-                    Click a product card to choose a product and price.
+                    {layoutMode ? (
+                      <>
+                        <Move size={14} />
+                        Drag a card to move it. Pull a handle to resize it.
+                      </>
+                    ) : (
+                      <>
+                        <Check size={14} />
+                        Click a product card to choose a product and price.
+                      </>
+                    )}
                   </div>
                   {issues.length > 0 && (
                     <div className="validation-note">{issues.join(" ")}</div>

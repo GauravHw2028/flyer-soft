@@ -1,5 +1,20 @@
 import qrcode from "qrcode-generator";
-import { Campaign, Template } from "./model";
+import { Box, Campaign, Template } from "./model";
+
+export type Rect = { x: number; y: number; w: number; h: number };
+
+/** A4 portrait page, in flyer units. */
+export const PAGE_W = 794;
+export const PAGE_H = 1123;
+/** Smallest product card a user can drag down to. */
+export const MIN_BOX_W = 96;
+export const MIN_BOX_H = 104;
+/** Keep cards away from the trimmed edge of the sheet. */
+const SAFE = 6;
+
+export const clamp = (lo: number, v: number, hi: number) =>
+  Math.min(hi, Math.max(lo, v));
+
 export function slotNumber(c: Campaign, index: number) {
   return c.items[index].slot ?? index;
 }
@@ -16,7 +31,9 @@ export function pageItems(c: Campaign, t: Template, page: number) {
     c.items.find((_, j) => slotNumber(c, j) === page * t.capacity + i),
   );
 }
-export function slotRects(t: Template) {
+
+/** The even grid a template starts from, before any custom placement. */
+export function slotRects(t: Template): Rect[] {
   const wear = t.style.startsWith("wear-"),
     editorial = t.style === "editorial",
     compact = t.style === "boutique";
@@ -34,6 +51,67 @@ export function slotRects(t: Template) {
     w,
     h,
   }));
+}
+
+/** Force a dragged box to stay whole, on the page, and above the minimum size. */
+export function fitBox(box: Box): Box {
+  const w = clamp(MIN_BOX_W, box.w, PAGE_W - SAFE * 2);
+  const h = clamp(MIN_BOX_H, box.h, PAGE_H - SAFE * 2);
+  return {
+    x: Math.round(clamp(SAFE, box.x, PAGE_W - SAFE - w)),
+    y: Math.round(clamp(SAFE, box.y, PAGE_H - SAFE - h)),
+    w: Math.round(w),
+    h: Math.round(h),
+  };
+}
+
+/** Grid rects for one page, with each product's custom box applied on top. */
+export function pageRects(c: Campaign, t: Template, page: number): Rect[] {
+  const base = slotRects(t);
+  const items = pageItems(c, t, page);
+  return base.map((rect, i) =>
+    items[i]?.box ? { ...fitBox(items[i]!.box as Box) } : rect,
+  );
+}
+
+export function defaultRectForSlot(t: Template, slot: number): Rect {
+  const rects = slotRects(t);
+  return rects[slot % rects.length];
+}
+
+/** Relative lighten (positive) or darken (negative) of a #rrggbb colour. */
+export function shade(hex: string, percent: number) {
+  const value = hex.replace("#", "");
+  const full =
+    value.length === 3
+      ? value
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : value;
+  const num = parseInt(full.slice(0, 6), 16);
+  if (Number.isNaN(num)) return hex;
+  const amount = Math.round((255 * percent) / 100);
+  const channel = (c: number) => clamp(0, c + amount, 255);
+  const r = channel((num >> 16) & 255),
+    g = channel((num >> 8) & 255),
+    b = channel(num & 255);
+  return (
+    "#" +
+    [r, g, b]
+      .map((c) => c.toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
+export function gradientId(prefix: string, t: Template) {
+  return (
+    prefix +
+    "-" +
+    t.id.replace(/[^a-zA-Z0-9_-]/g, "") +
+    "-" +
+    t.color.replace("#", "")
+  );
 }
 export function qrSvg(value: string, x: number, y: number, size: number) {
   if (!value) return "";

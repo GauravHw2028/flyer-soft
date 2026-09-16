@@ -1,6 +1,14 @@
 import { Campaign, Template } from "./model";
 
-import { pageItems, pageCount, slotRects, qrSvg } from "./flyer-layout";
+import {
+  pageItems,
+  pageCount,
+  pageRects,
+  qrSvg,
+  clamp,
+  shade,
+  gradientId,
+} from "./flyer-layout";
 
 import { wearFlyer } from "./wear-flyer";
 
@@ -58,11 +66,41 @@ function baseFlyerSvg(
   const color = t.color,
     accent = t.accent,
     minimal = t.style === "minimal",
-    items = pageItems(c, t, page);
-  let s = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 794 1123" width="794" height="1123" role="img" aria-label="${esc(c.name)}"><rect width="794" height="1123" fill="${minimal ? "#fafaf8" : "#fff"}"/><g font-family="Arial,Helvetica,sans-serif">`;
-
-  s += `<rect width="794" height="326" fill="${minimal ? "#f0f0eb" : color}"/>`;
+    items = pageItems(c, t, page),
+    rects = pageRects(c, t, page);
   const ink = minimal ? color : "#fff";
+  const id = (suffix: string) => gradientId("flyer", t) + "-" + suffix;
+
+  let s =
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 794 1123" width="794" height="1123" role="img" aria-label="${esc(c.name)}"><defs>` +
+    `<linearGradient id="${id("head")}" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop stop-color="${shade(minimal ? "#f0f0eb" : color, 14)}"/>` +
+    `<stop offset="1" stop-color="${shade(minimal ? "#e2e3dd" : color, -20)}"/>` +
+    `</linearGradient>` +
+    `<linearGradient id="${id("band")}" x1="0" y1="0" x2="1" y2="0">` +
+    `<stop stop-color="${shade(accent, 12)}"/><stop offset="1" stop-color="${shade(accent, -12)}"/>` +
+    `</linearGradient>` +
+    `<linearGradient id="${id("foot")}" x1="0" y1="0" x2="1" y2="0">` +
+    `<stop stop-color="${shade(minimal ? "#e9e9e3" : color, -14)}"/>` +
+    `<stop offset="1" stop-color="${shade(minimal ? "#e9e9e3" : color, 12)}"/>` +
+    `</linearGradient>` +
+    `<linearGradient id="${id("card")}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop stop-color="#ffffff"/><stop offset="1" stop-color="#f4f7f2"/>` +
+    `</linearGradient>` +
+    `<linearGradient id="${id("sheen")}" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop stop-color="#ffffff" stop-opacity=".22"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>` +
+    `</linearGradient>` +
+    `<radialGradient id="${id("glow")}" cx="50%" cy="50%" r="50%">` +
+    `<stop stop-color="${accent}" stop-opacity=".5"/><stop offset="1" stop-color="${accent}" stop-opacity="0"/>` +
+    `</radialGradient>` +
+    `<filter id="${id("soft")}" x="-12%" y="-12%" width="124%" height="124%">` +
+    `<feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0d2a1c" flood-opacity=".12"/>` +
+    `</filter>` +
+    `</defs><rect width="794" height="1123" fill="${minimal ? "#fafaf8" : "#fff"}"/><g font-family="Arial,Helvetica,sans-serif">`;
+
+  s += `<rect width="794" height="326" fill="url(#${id("head")})"/>`;
+  s += `<ellipse cx="621" cy="118" rx="292" ry="196" fill="url(#${id("glow")})"/>`;
+  s += `<rect width="794" height="326" fill="url(#${id("sheen")})"/>`;
 
   if (c.brand.logo)
     s += `<image x="35" y="29" width="55" height="42" preserveAspectRatio="xMidYMid meet" href="${esc(images[c.brand.logo] || c.brand.logo)}"/>`;
@@ -82,7 +120,7 @@ function baseFlyerSvg(
     );
   });
 
-  s += `<rect x="0" y="282" width="794" height="44" fill="${accent}"/>`;
+  s += `<rect x="0" y="282" width="794" height="44" fill="url(#${id("band")})"/>`;
 
   const date = (d: string) =>
     new Date(d + "T12:00:00").toLocaleDateString("en-GB", {
@@ -94,26 +132,33 @@ function baseFlyerSvg(
   s += text(`${date(c.start)} – ${date(c.end)}`, 38, 310, 17, color, 700);
   s += text("FRESH FINDS. GREAT PRICES.", 756, 310, 12, color, 600, "end");
 
-  const cols = t.columns,
-    rows = Math.ceil(t.capacity / cols),
-    gap = 12,
-    w = (746 - gap * (cols - 1)) / cols,
-    h = (698 - gap * (rows - 1)) / rows;
-
   items.forEach((p, i) => {
     if (!p) return;
-    const x = 24 + (i % cols) * (w + gap),
-      y = 344 + Math.floor(i / cols) * (h + gap);
-    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${minimal ? 0 : 5}" fill="#fff" stroke="${minimal ? "#d5d8d2" : "#dfe6db"}"/>`;
+    const { x, y, w, h } = rects[i];
+    const nameSize = clamp(9, Math.min(w * 0.075, h * 0.05), 22),
+      priceSize = clamp(15, Math.min(w * 0.18, h * 0.125), 52),
+      packSize = clamp(8, h * 0.038, 15),
+      nameY = y + h - clamp(60, h * 0.315, 190),
+      packY = y + h - clamp(38, h * 0.19, 115),
+      priceY = y + h - clamp(8, h * 0.032, 20),
+      oldPriceY = priceY - clamp(18, h * 0.096, 44),
+      imgTop = y + clamp(8, w * 0.055, 22),
+      imgBottom = Math.min(
+        nameY - nameSize - 5,
+        packY - packSize * 1.35,
+        y + h - packSize * 2.4,
+      ),
+      imgH = Math.max(18, imgBottom - imgTop);
 
-    const imgH = h - 133;
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${minimal ? 0 : clamp(3, w * 0.022, 14)}" fill="url(#${id("card")})" stroke="${minimal ? "#d5d8d2" : "#dfe6db"}" ${minimal ? "" : `filter="url(#${id("soft")})"`}/>`;
+
     if (p.image)
-      s += `<image x="${x + 14}" y="${y + 12}" width="${w - 28}" height="${imgH}" preserveAspectRatio="xMidYMid meet" href="${esc(images[p.image] || p.image)}"/>`;
+      s += `<image x="${x + 12}" y="${imgTop}" width="${w - 24}" height="${imgH}" preserveAspectRatio="xMidYMid meet" href="${esc(images[p.image] || p.image)}"/>`;
     else
       s += text(
         "Add product image",
         x + w / 2,
-        y + imgH / 2,
+        imgTop + imgH / 2,
         14,
         "#8a948c",
         400,
@@ -122,37 +167,45 @@ function baseFlyerSvg(
 
     if (p.badge)
       s +=
-        `<rect x="${x + 8}" y="${y + 8}" width="${Math.min(w - 16, p.badge.length * 7 + 18)}" height="24" rx="3" fill="${accent}"/>` +
+        `<rect x="${x + 8}" y="${y + 8}" width="${Math.min(w - 16, p.badge.length * 7 + 18)}" height="24" rx="3" fill="url(#${id("band")})"/>` +
         text(p.badge.slice(0, 24), x + 16, y + 25, 12, color, 700);
 
-    const names = lines(p.name, cols === 3 ? 24 : 35, 2);
+    const names = lines(p.name, Math.max(10, Math.round(w / (nameSize * 0.56))), 2);
     names.forEach((l, j) => {
       s += text(
         l,
         x + w / 2,
-        y + h - 108 + j * 20,
-        cols === 3 ? 16 : 18,
+        nameY + j * nameSize * 1.25,
+        nameSize,
         "#223128",
         700,
         "middle",
       );
     });
 
-    s += text(p.pack, x + w / 2, y + h - 65, 13, "#6c796e", 400, "middle");
+    s += text(p.pack, x + w / 2, packY, packSize, "#6c796e", 400, "middle");
 
     if (
       p.showOldPrice === true ||
       (p.showOldPrice === undefined && p.price > p.offer)
     ) {
-      s += `<text x="${x + w / 2}" y="${y + h - 44}" font-size="13" fill="#8b928d" text-anchor="middle" text-decoration="line-through">${esc(c.brand.currency)} ${p.price.toFixed(2)}</text>`;
+      s += `<text x="${x + w / 2}" y="${oldPriceY}" font-size="${packSize}" fill="#8b928d" text-anchor="middle" text-decoration="line-through">${esc(c.brand.currency)} ${p.price.toFixed(2)}</text>`;
     }
 
-    s += text(c.brand.currency, x + 13, y + h - 14, 12, color, 600);
+    const price = p.offer.toFixed(2);
     s += text(
-      p.offer.toFixed(2),
+      c.brand.currency,
+      x + 13,
+      priceY - 3,
+      Math.max(9, Math.min(12, priceSize * 0.3)),
+      color,
+      600,
+    );
+    s += text(
+      price,
       x + w - 13,
-      y + h - 11,
-      p.offer > 9999 ? 32 : 43,
+      priceY,
+      Math.min(priceSize, (w - 30) / (price.length * 0.56)),
       color,
       900,
       "end",
@@ -170,7 +223,7 @@ function baseFlyerSvg(
       "middle",
     );
 
-  s += `<rect x="0" y="1059" width="794" height="64" fill="${minimal ? "#e9e9e3" : color}"/>`;
+  s += `<rect x="0" y="1059" width="794" height="64" fill="url(#${id("foot")})"/>`;
 
   s += text(
     [c.brand.address, c.brand.phone]
@@ -229,9 +282,34 @@ function studioFlyer(
   ) =>
     `<image href="${esc(images[url] || url)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="${crop ? "xMaxYMax slice" : "xMidYMid meet"}"/>`;
 
-  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 794 1123" width="794" height="1123" role="img" aria-label="${esc(c.name)}"><rect width="794" height="1123" fill="${cream}"/><g font-family="Arial,Helvetica,sans-serif">`;
+  const g = (suffix: string) => gradientId("studio", t) + "-" + suffix,
+    deep = shade(color, -22),
+    bright = shade(color, 16);
 
-  s += `<rect width="794" height="${header}" fill="${editorial ? cream : color}"/>`;
+  let s =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 794 1123" width="794" height="1123" role="img" aria-label="${esc(c.name)}"><defs>` +
+    `<linearGradient id="${g("head")}" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop stop-color="${bright}"/><stop offset="1" stop-color="${deep}"/></linearGradient>` +
+    `<linearGradient id="${g("veil")}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop stop-color="${color}" stop-opacity="0"/><stop offset="1" stop-color="${color}" stop-opacity=".95"/>` +
+    `</linearGradient>` +
+    `<linearGradient id="${g("band")}" x1="0" y1="0" x2="1" y2="0">` +
+    `<stop stop-color="${shade(gold, 14)}"/><stop offset="1" stop-color="${shade(gold, -14)}"/>` +
+    `</linearGradient>` +
+    `<linearGradient id="${g("card")}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop stop-color="#ffffff"/><stop offset="1" stop-color="#f8f4ec"/></linearGradient>` +
+    `<linearGradient id="${g("foot")}" x1="0" y1="0" x2="1" y2="0">` +
+    `<stop stop-color="${deep}"/><stop offset="1" stop-color="${bright}"/></linearGradient>` +
+    `<radialGradient id="${g("glow")}" cx="50%" cy="50%" r="50%">` +
+    `<stop stop-color="${gold}" stop-opacity=".42"/><stop offset="1" stop-color="${gold}" stop-opacity="0"/>` +
+    `</radialGradient>` +
+    `<filter id="${g("soft")}" x="-12%" y="-12%" width="124%" height="124%">` +
+    `<feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#2a1608" flood-opacity=".13"/>` +
+    `</filter>` +
+    `</defs><rect width="794" height="1123" fill="${cream}"/><g font-family="Arial,Helvetica,sans-serif">`;
+
+  s += `<rect width="794" height="${header}" fill="${editorial ? cream : `url(#${g("head")})`}"/>`;
+  s += `<ellipse cx="${editorial ? 190 : 200}" cy="${header - 84}" rx="300" ry="180" fill="url(#${g("glow")})"/>`;
 
   s += image(
     t.artwork!,
@@ -241,6 +319,9 @@ function studioFlyer(
     header,
     true,
   );
+
+  if (!editorial)
+    s += `<rect y="${header - 104}" width="794" height="104" fill="url(#${g("veil")})"/>`;
 
   if (c.brand.logo) s += image(c.brand.logo, 36, 27, 44, 37);
 
@@ -300,7 +381,7 @@ function studioFlyer(
     });
 
   if (editorial) {
-    s += `<rect x="0" y="${header}" width="794" height="42" fill="${color}"/>`;
+    s += `<rect x="0" y="${header}" width="794" height="42" fill="url(#${g("head")})"/>`;
     s += text(
       `${date(c.start)} — ${date(c.end)}`,
       397,
@@ -311,7 +392,7 @@ function studioFlyer(
       "middle",
     );
   } else {
-    s += `<rect x="24" y="${header - 18}" width="746" height="42" rx="${compact ? 0 : 21}" fill="${gold}"/>`;
+    s += `<rect x="24" y="${header - 18}" width="746" height="42" rx="${compact ? 0 : 21}" fill="url(#${g("band")})"/>`;
     s += text(
       `${date(c.start)} — ${date(c.end)}`,
       397,
@@ -325,11 +406,8 @@ function studioFlyer(
 
   const start = header + (editorial ? 84 : 69),
     margin = editorial ? 36 : 24,
-    gap = editorial ? 22 : 12,
     cols = t.columns,
-    rows = Math.ceil(t.capacity / cols),
-    w = (794 - margin * 2 - gap * (cols - 1)) / cols,
-    h = (1020 - start - gap * (rows - 1)) / rows;
+    rects = pageRects(c, t, page);
 
   s += text(
     editorial
@@ -348,19 +426,39 @@ function studioFlyer(
 
   products.forEach((p, i) => {
     if (!p) return;
-    const x = margin + (i % cols) * (w + gap),
-      y = start + Math.floor(i / cols) * (h + gap);
+    const { x, y, w, h } = rects[i];
+    const base = compact ? 211 : editorial ? 282 : 276,
+      k = clamp(0.55, h / base, 1.6),
+      nameSize = clamp(
+        9,
+        Math.min((cols === 2 ? 19 : 15) * k, w * 0.09, h * 0.11),
+        26,
+      ),
+      packSize = clamp(8, (compact ? 12 : 12) * k, 16),
+      priceSize = clamp(
+        14,
+        Math.min((editorial ? 40 : compact ? 30 : 35) * k, w * 0.4),
+        46,
+      ),
+      nameY = y + h - clamp(50, (compact ? 87 : 102) * k, 240),
+      packY = y + h - clamp(28, 57 * k, 140),
+      oldY = y + h - clamp(14, 24 * k, 60),
+      priceY = y + h - clamp(10, 18 * k, 44),
+      imgTop = y + 10;
 
-    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${editorial ? 0 : 9}" fill="#fff" ${editorial ? "" : 'stroke="#eadfcf"'}/>`;
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${editorial ? 0 : clamp(4, w * 0.03, 12)}" fill="url(#${g("card")})" ${editorial ? "" : 'stroke="#eadfcf"'} ${editorial ? "" : `filter="url(#${g("soft")})"`}/>`;
 
-    const picture = h - (compact ? 112 : 127);
+    const picture = Math.max(
+      16,
+      Math.min(nameY - nameSize - 8, packY - packSize * 1.4) - imgTop,
+    );
 
-    if (p.image) s += image(p.image, x + 12, y + 10, w - 24, picture);
+    if (p.image) s += image(p.image, x + 12, imgTop, w - 24, picture);
     else
       s += text(
         "Your product image",
         x + w / 2,
-        y + picture / 2,
+        imgTop + picture / 2,
         13,
         "#a59483",
         400,
@@ -369,51 +467,52 @@ function studioFlyer(
 
     if (p.badge)
       s +=
-        `<rect x="${x + 7}" y="${y + 7}" width="${Math.min(w - 14, p.badge.length * 6 + 18)}" height="23" rx="11" fill="${gold}"/>` +
+        `<rect x="${x + 7}" y="${y + 7}" width="${Math.min(w - 14, p.badge.length * 6 + 18)}" height="23" rx="11" fill="url(#${g("band")})"/>` +
         text(p.badge.slice(0, 27), x + 15, y + 23, 11, color, 700);
 
-    const name = lines(p.name, cols === 2 ? 34 : 24, 2);
+    const name = lines(
+      p.name,
+      Math.max(8, Math.round((w - 28) / (nameSize * 0.56))),
+      2,
+    );
     name.forEach((l, j) => {
       s += text(
         l,
         x + 14,
-        y + h - (compact ? 87 : 102) + j * 18,
-        cols === 2 ? 19 : 15,
+        nameY + j * nameSize * 1.22,
+        nameSize,
         "#362e2b",
         600,
       );
     });
 
-    s += text(p.pack, x + 14, y + h - 57, 12, "#8b7e74", 400);
+    s += text(p.pack, x + 14, packY, packSize, "#8b7e74", 400);
 
     if (editorial)
-      s += `<path d="M${x + 14} ${y + h - 45} H${x + w * 0.5}" stroke="#eadfcf"/>`;
+      s += `<path d="M${x + 14} ${priceY - priceSize * 1.15} H${x + w * 0.5}" stroke="#eadfcf"/>`;
 
     if (
       p.showOldPrice === true ||
       (p.showOldPrice === undefined && p.price > p.offer)
     )
-      s += `<text x="${x + 14}" y="${y + h - 24}" font-size="12" fill="#9d8e83" text-decoration="line-through">${esc(c.brand.currency)} ${p.price.toFixed(2)}</text>`;
+      s += `<text x="${x + 14}" y="${oldY}" font-size="${packSize}" fill="#9d8e83" text-decoration="line-through">${esc(c.brand.currency)} ${p.price.toFixed(2)}</text>`;
 
     const price = p.offer.toFixed(2),
-      size = Math.min(
-        editorial ? 40 : compact ? 30 : 35,
-        Math.floor((w * 0.53) / (price.length * 0.56)),
-      );
+      size = Math.min(priceSize, (w * 0.53) / (price.length * 0.56));
 
-    s += text(price, x + w - 14, y + h - 18, size, color, 800, "end");
+    s += text(price, x + w - 14, priceY, size, color, 800, "end");
     s += text(
       c.brand.currency,
       x + w - 14,
-      y + h - 48,
-      9,
+      priceY - Math.max(20, priceSize * 0.85),
+      Math.max(8, Math.min(10, priceSize * 0.28)),
       "#8b6c51",
       600,
       "end",
     );
 
     if (editorial)
-      s += `<rect x="${x}" y="${y + h - 3}" width="${w}" height="3" fill="${gold}"/>`;
+      s += `<rect x="${x}" y="${y + h - 3}" width="${w}" height="3" fill="url(#${g("band")})"/>`;
   });
 
   if (!products.length)
@@ -427,7 +526,7 @@ function studioFlyer(
       "middle",
     );
 
-  s += `<path d="M24 1043 H770" stroke="${gold}"/><rect x="0" y="1059" width="794" height="64" fill="${color}"/>`;
+  s += `<path d="M24 1043 H770" stroke="${gold}"/><rect x="0" y="1059" width="794" height="64" fill="url(#${g("foot")})"/>`;
 
   s += text(
     [c.brand.address, c.brand.phone]
@@ -577,7 +676,7 @@ export function flyerSvg(
   let overlay = "";
   const items = pageItems(c, t, page);
 
-  slotRects(t).forEach(({ x, y, w, h }, i) => {
+  pageRects(c, t, page).forEach(({ x, y, w, h }, i) => {
     if (!items[i])
       overlay += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="white" stroke="#d8e2dc"/>${interactive ? `<text x="${x + w / 2}" y="${y + h / 2}" text-anchor="middle" font-family="Arial" font-size="14" fill="#708578">+ Choose product</text>` : ""}`;
     if (interactive)

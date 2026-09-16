@@ -86,6 +86,14 @@ export const campaignSchema = z
           badge: z.string().max(30),
           showOldPrice: z.boolean().optional(),
           slot: z.number().int().min(0).max(119).optional(),
+          box: z
+            .object({
+              x: z.number().finite().min(0).max(794),
+              y: z.number().finite().min(0).max(1123),
+              w: z.number().finite().min(40).max(794),
+              h: z.number().finite().min(40).max(1123),
+            })
+            .optional(),
         }),
       )
       .max(120),

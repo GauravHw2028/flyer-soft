@@ -8,11 +8,17 @@ export type Product = {
   image: string;
   sku: string;
 };
+/**
+ * Free position of one product card on a flyer page.
+ * Coordinates are in flyer units (the A4 portrait page is 794 x 1123).
+ */
+export type Box = { x: number; y: number; w: number; h: number };
 export type Offer = Product & {
   offer: number;
   badge: string;
   showOldPrice?: boolean;
   slot?: number;
+  box?: Box;
 };
 export type Brand = {
   name: string;

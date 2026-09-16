@@ -37,12 +37,25 @@ Database migrations are in `drizzle/`. Hosting applies them during deployment. C
 ## Useful source files
 
 - `app/studio.tsx`: editor and campaign workflow.
+- `app/flyer-layout.ts`: page geometry. `slotRects()` is the template grid and
+  `pageRects()` applies each card's saved free position on top of it.
 - `app/business-ui.tsx`: business administration, credit requests, product slot popup and enhancement preview.
 - `app/wear-mart.ts` and `app/wear-flyer.ts`: Wear Mart pack and editable rendering.
 - `app/flyer.ts` and `app/flyer-layout.ts`: shared rendering, slot coordinates, QR codes and exports.
 - `app/api/`: authenticated storage, business, credit and enhancement routes.
 - `db/schema.ts` and `drizzle/`: database schema and migrations.
 - `public/`: bundled sample product photos and Higgsfield artwork.
+
+## Card layout
+
+**Arrange cards** turns the canvas into a layout editor. Drag a card to move it,
+pull one of its eight handles to resize it, or use the arrow keys (hold Shift
+for bigger steps). Card text, images and price tags size themselves from the
+card, so a large card reads as a hero and a small one stays legible. **Even
+grid** puts every card back on the template grid.
+
+Each card's position is stored as `box` on its campaign item, clamped to the
+page, and is used by the on-screen preview and by the PNG, PDF and SVG exports.
 
 ## Verification
 
