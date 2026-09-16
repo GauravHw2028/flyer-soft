@@ -30,14 +30,8 @@ export async function admin() {
   return u;
 }
 export async function account(owner: string) {
-  await db()
-    .prepare(
-      "INSERT OR IGNORE INTO credit_accounts (owner,balance) VALUES (?,0)",
-    )
-    .bind(owner)
-    .run();
   return (await db()
-    .prepare("SELECT balance FROM credit_accounts WHERE owner=?")
+    .prepare("SELECT COALESCE(SUM(delta),0) AS balance FROM credit_ledger WHERE owner=?")
     .bind(owner)
     .first<{ balance: number }>())!.balance;
 }

@@ -41,11 +41,3 @@ CREATE TABLE `topups` (
 	`created` text NOT NULL,
 	`reviewer` text
 );
---> statement-breakpoint
-CREATE TRIGGER credit_ledger_guard BEFORE INSERT ON credit_ledger BEGIN
- SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM credit_accounts WHERE owner=NEW.owner AND balance+NEW.delta>=0) THEN RAISE(ABORT,'Insufficient credits') END;
-END;
---> statement-breakpoint
-CREATE TRIGGER credit_ledger_apply AFTER INSERT ON credit_ledger BEGIN
- UPDATE credit_accounts SET balance=balance+NEW.delta WHERE owner=NEW.owner;
-END;

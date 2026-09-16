@@ -32,7 +32,7 @@ Set these in hosting runtime settings, never in client-side code:
 
 For local development only, `scripts/setup-local.mjs` creates ignored `.dev.vars` with the local mock account as administrator. You may add a development API key there; never commit or share it. Secret values are excluded from the Desktop deliverable and archive.
 
-Database migrations are in `drizzle/`. Hosting applies them during deployment. Migration 0001 contains credit ledger triggers; preserve these along with the generated table schema. Client input cannot set its own balance or administrator role.
+Database migrations are in `drizzle/`. Hosting applies them during deployment. Credits use an append-only ledger with atomic D1 reservation batches; the balance is calculated from that ledger. Client input cannot set its own balance or administrator role.
 
 ## Useful source files
 
@@ -51,6 +51,7 @@ npx tsc --noEmit
 npm run build
 node scripts/smoke-test.mjs
 node scripts/business-smoke-test.mjs
+node scripts/credit-test.mjs
 ```
 
 Smoke tests target localhost only and require the local administrator and an existing sample campaign. The business test creates explicitly labelled QA payment/account records; it is not a production payment test. Do not run it against the hosted site.

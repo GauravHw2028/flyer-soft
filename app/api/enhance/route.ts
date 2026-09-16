@@ -2,6 +2,7 @@ import { createFalClient } from "@fal-ai/client";
 import { z } from "zod";
 import { db, bucket, sameOrigin, failure } from "../_shared";
 import { identity, account, settings } from "../business-context";
+import {reserveJobSql,debitSql} from '../credit-sql';
 type Job = {
   id: string;
   owner: string;
@@ -79,18 +80,19 @@ export async function POST(req: Request) {
       binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
     const now = new Date().toISOString();
     try {
-      await db().batch([
+      const reservation=await db().batch([
         db()
           .prepare(
-            "INSERT INTO enhancements (id,owner,source,status,created) VALUES (?,?,?,'reserved',?)",
+            reserveJobSql,
           )
-          .bind(id, u.userId, source, now),
+          .bind(id, u.userId, source, now, u.userId),
         db()
           .prepare(
-            "INSERT INTO credit_ledger (id,owner,delta,reason,created) VALUES (?,?,-1,?,?)",
+            debitSql,
           )
-          .bind("ai:" + id, u.userId, "Studio product photo", now),
+          .bind("ai:" + id, u.userId, "Studio product photo", now, id, u.userId),
       ]);
+      if(!reservation[0].meta.changes)return Response.json({error:'Not enough credits. Refresh your balance.'},{status:402});
     } catch {
       return Response.json(
         {
