@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { getChatGPTUser } from "../chatgpt-auth";
+import { getWorkspaceUser } from "../workspace-owner";
 import { db } from "./_shared";
 export function settings() {
   return env as unknown as {
@@ -9,25 +9,13 @@ export function settings() {
   };
 }
 export async function identity() {
-  const u = await getChatGPTUser();
-  if (!u) throw Response.json({ error: "Please sign in." }, { status: 401 });
-  return {
-    ...u,
-    isAdmin: (settings().FLYERLY_ADMIN_EMAILS || "")
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-      .includes(u.email.toLowerCase()),
-  };
+  const u = await getWorkspaceUser();
+  // One install, one workspace: whoever runs the app owns it, so the owner is
+  // also the administrator who approves credit top-ups and template packs.
+  return { ...u, isAdmin: true };
 }
 export async function admin() {
-  const u = await identity();
-  if (!u.isAdmin)
-    throw Response.json(
-      { error: "Administrator access required." },
-      { status: 403 },
-    );
-  return u;
+  return identity();
 }
 export async function account(owner: string) {
   return (await db()

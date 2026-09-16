@@ -15,6 +15,6 @@ if (-not (Test-Path -LiteralPath 'node_modules')) {
 }
 & $flyerlyNode scripts/setup-local.mjs
 if ($LASTEXITCODE -ne 0) { throw 'Local database setup failed.' }
-Write-Host 'Open http://localhost:5173 and click Sign in with ChatGPT to use the local demo account.'
+Write-Host 'Open http://localhost:5173. The app opens straight into your own workspace; there is no sign-in.'
 Write-Host 'Keep this terminal open. Press Ctrl+C to stop the local app.'
 & $flyerlyNode scripts/run-framework.mjs dev

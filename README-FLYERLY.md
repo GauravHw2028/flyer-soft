@@ -4,15 +4,18 @@ The project includes the full app source, image assets, dependency lockfile, dat
 
 ## Open the hosted pilot
 
-https://flyerly-market-studio.kichalauji9.chatgpt.site
-
-The site remains private. The site owner's account is configured as administrator. Open **Business admin → Open showcase flyer** to demonstrate Wear Mart. Switch between its ten styles under **Design**. Example products/prices are for demonstration.
+Open **Business admin → Open showcase flyer** to demonstrate Wear Mart. Switch
+between its layouts under **Design → Find your look**. Example products and
+prices are for demonstration.
 
 ## Run on Windows
 
 Double-click **Start Flyerly.cmd**. It uses Node.js 22.13+ (24 recommended), installs dependencies when needed, applies local database migrations and starts http://localhost:5173. On this computer it can use the existing Codex Node runtime. The first installation needs Internet access.
 
-Click **Sign in with ChatGPT** in the local app to activate its development-only `seedy@sites.test` account. Local product data is kept under `.wrangler/state` in this project folder. Stop the server with Ctrl+C before copying or backing up that directory. Do not run the Desktop copy and the original checkout on port 5173 at the same time.
+There is no sign-in: the app opens straight into its own workspace. Local
+product data is kept under `.wrangler/state` in this project folder. Stop the
+server with Ctrl+C before copying or backing up that directory. Do not run the
+Desktop copy and the original checkout on port 5173 at the same time.
 
 For manual setup:
 
@@ -26,9 +29,12 @@ npm run dev
 
 Set these in hosting runtime settings, never in client-side code:
 
-- `FLYERLY_ADMIN_EMAILS`: comma-separated verified sign-in emails allowed to manage businesses and approve credits. There is no automatic “first user becomes admin” rule.
+- `FLYERLY_OWNER_ID`: workspace key for this install. Change it when more than one install shares a database.
+- `FLYERLY_STORE_NAME`, `FLYERLY_CONTACT_EMAIL`: how this install is labelled in the business screens.
 - `FAL_KEY`: secret fal.ai API key. Enhancement is unavailable until this is configured.
 - `PAYMENT_INSTRUCTIONS`: your actual bank/cash payment instructions and support contact.
+
+The install owner is the administrator, so there is no separate admin list.
 
 For local development only, `scripts/setup-local.mjs` creates ignored `.dev.vars` with the local mock account as administrator. You may add a development API key there; never commit or share it. Secret values are excluded from the Desktop deliverable and archive.
 

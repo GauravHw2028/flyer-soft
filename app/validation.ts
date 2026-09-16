@@ -5,7 +5,7 @@ const image = z
   .refine(
     (v) =>
       v === "" ||
-      /^\/products\/[a-z]+\.jpg$/.test(v) ||
+      /^\/products\/[a-z0-9-]+\.(jpg|png)$/.test(v) ||
       /^\/api\/assets\/[0-9a-f-]{36}$/.test(v),
     "Invalid image reference",
   );
@@ -53,7 +53,7 @@ export const templateSchema = z.object({
   name: z.string().min(1).max(50),
   color: z.string().regex(/^#[0-9a-f]{6}$/i),
   accent: z.string().regex(/^#[0-9a-f]{6}$/i),
-  columns: z.number().int().min(2).max(3),
+  columns: z.number().int().min(2).max(4),
   capacity: z.number().int().min(4).max(12),
   style: z.string().max(20),
   artwork: z

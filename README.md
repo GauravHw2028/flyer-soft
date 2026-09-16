@@ -6,24 +6,32 @@ A private supermarket flyer studio with a persistent product library, image uplo
 
 - Product CRUD, batch image uploads and CSV preview/import.
 - Nine starter templates, including three layouts with Higgsfield artwork, plus saved custom color/grid templates.
+- Thirteen Wear Mart poster layouts built from the client's printed format: masthead, offer line, themed hero, dashed product cards with price roundels, branch row and footer.
 - Campaign-specific product, price, brand and template snapshots.
+- Free card layout: any product card can be dragged, resized and given a different size from the others.
+- Bundled sample products are transparent cutouts, so photos sit on the card instead of showing their studio backdrop.
 - Autosave with revision checks, undo/redo, duplication and history.
 - One SVG renderer for the preview and A4 multipage exports.
 - 2480 x 3508 PNG, multipage A4 PDF and embedded-image SVG downloads.
-- Platform sign-in, server-side owner scoping, D1 records and R2 files.
+- Self-owned install: one workspace per install, no third-party identity provider.
 - Responsive workspace and read-only WebMCP flyer inspection.
 
 ## Development
 
 Node 22.13+ is required. Install using `npm run install:ci`; start with `npm run dev`.
 
-Local sign-in: `/signin-with-chatgpt?return_to=/`. Production identity is supplied by Sites. The local mock sign-in is excluded from production.
+There is no sign-in step. The app reads and writes its own workspace directly.
+Set `FLYERLY_OWNER_ID` when one database serves more than one install, and
+`FLYERLY_STORE_NAME` / `FLYERLY_CONTACT_EMAIL` to label that owner.
+
+Regenerate the transparent sample product photos with
+`python scripts/cutout-products.py`.
 
 Generate schema changes with `npm run db:generate`. Build using `npm run build`, then apply pending SQL locally using the Wrangler config in `dist/server/wrangler.json` and persistence directory `.wrangler/state`. Sites applies migrations under `drizzle/` when publishing.
 
 ## Validation
 
-`npx tsc --noEmit` checks types. After creating a sample campaign in the local UI, `node scripts/smoke-test.mjs` verifies authentication, image storage, validation, revision conflicts and campaign snapshots. This test refuses non-local URLs and restores the original local records afterwards.
+`npx tsc --noEmit` checks types. After creating a sample campaign in the local UI, `node scripts/smoke-test.mjs` verifies image storage, validation, revision conflicts and campaign snapshots. This test refuses non-local URLs and restores the original local records afterwards.
 
 ## Data
 

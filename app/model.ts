@@ -164,7 +164,7 @@ export const sampleProducts: Product[] = [
   pack: String(pack),
   category: String(category),
   price: Number(price),
-  image: "/products/" + id + ".jpg",
+  image: "/products/" + id + ".png",
   sku: "",
 }));
 export function newCampaign(

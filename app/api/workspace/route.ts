@@ -1,16 +1,63 @@
 import { assignedArtwork } from "../template-assets";
 import { owner, db, sameOrigin, failure } from "../_shared";
 import { workspaceSchema } from "../../validation";
+
+/**
+ * The bundled sample photos were reshot as transparent PNGs so the grey studio
+ * backdrop stops showing as a box on the flyer card. Workspaces saved before
+ * that change still point at the JPEGs, so lift them onto the cutouts on read.
+ */
+function modernImage(path: string): string {
+  return path.replace(/^\/products\/([a-z0-9-]+)\.jpg$/, "/products/$1.png");
+}
+
+function modernWorkspace<T extends Record<string, unknown>>(data: T): T {
+  const products = (data.products as { image: string }[] | undefined) || [];
+  const campaigns = (data.campaigns as {
+    items: { image: string }[];
+  }[] | undefined) || [];
+  return {
+    ...data,
+    products: products.map((p) => ({ ...p, image: modernImage(p.image) })),
+    campaigns: campaigns.map((c) => ({
+      ...c,
+      items: c.items.map((i) => ({ ...i, image: modernImage(i.image) })),
+    })),
+  };
+}
+
 export async function GET() {
   try {
     const id = await owner();
-    const row = await db()
+    let row = await db()
       .prepare("SELECT data, revision FROM workspaces WHERE owner = ?")
       .bind(id)
       .first<{ data: string; revision: number }>();
+    if (!row) {
+      // Adopt a workspace saved by an earlier install of this app so an
+      // upgrade never looks like an empty account.
+      const previous = await db()
+        .prepare(
+          "SELECT owner FROM workspaces ORDER BY updated DESC LIMIT 1",
+        )
+        .first<{ owner: string }>();
+      if (previous && previous.owner !== id) {
+        await db()
+          .prepare("UPDATE workspaces SET owner = ? WHERE owner = ?")
+          .bind(id, previous.owner)
+          .run();
+        row = await db()
+          .prepare("SELECT data, revision FROM workspaces WHERE owner = ?")
+          .bind(id)
+          .first<{ data: string; revision: number }>();
+      }
+    }
     return Response.json(
       row
-        ? { data: JSON.parse(row.data), revision: row.revision }
+        ? {
+            data: modernWorkspace(JSON.parse(row.data)),
+            revision: row.revision,
+          }
         : { data: null, revision: 0 },
       { headers: { "Cache-Control": "no-store" } },
     );

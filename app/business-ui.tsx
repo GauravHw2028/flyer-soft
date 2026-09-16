@@ -222,7 +222,7 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
         <div>
           <h2>Business accounts</h2>
           <p className="help-text">
-            Assign up to 10 private templates to each customer’s sign-in email.
+            Assign up to 10 private templates to each customer account.
           </p>
         </div>
         <button
@@ -270,7 +270,7 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
       ))}
       {!state?.businesses.length && (
         <p className="help-text">
-          Add the customer’s actual sign-in email when you onboard them. The
+          Add the customer’s real contact email when you onboard them. The
           showcase does not create a fictitious customer account.
         </p>
       )}
@@ -364,7 +364,7 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
                   />
                 </label>
                 <label className="field">
-                  <span>Customer sign-in email</span>
+                  <span>Customer contact email</span>
                   <input
                     required
                     type="email"

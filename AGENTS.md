@@ -20,11 +20,22 @@ and the same pattern in `app/use-workspace.ts`. Do not add new ones.
 
 ## Product rules worth keeping
 
+- The app owns its own workspace. There is no sign-in provider: routes read the
+  owner id from `app/workspace-owner.ts`, and `.dev.vars` or the hosting runtime
+  supplies `FLYERLY_OWNER_ID`, `FLYERLY_STORE_NAME` and `FLYERLY_CONTACT_EMAIL`.
+  Do not reintroduce a third-party identity dependency without being asked.
 - Product cards live in `app/flyer-layout.ts`. `slotRects()` is the template
   grid; `pageRects()` applies each product's saved `box` on top of it. Every
   renderer (base, artwork, Wear Mart) must read geometry from `pageRects()` so
   dragging a card moves it on the exported PNG and PDF too.
 - Card text and image sizes are derived from the card's own width and height so
   a resized card still looks intentional.
+- Wear Mart posters follow the client's printed format in `app/wear-flyer.ts`:
+  masthead, offer line, themed hero, branch strip, dashed product cards with a
+  price roundel, branch row and footer. Add a theme by extending `THEMES`.
+- Arabic text in SVG anchors on its start edge, which sits on the right. Use
+  `text-anchor="start"` at the right margin for right-aligned RTL copy.
+- Sample product photos are transparent cutouts. Regenerate them with
+  `python scripts/cutout-products.py` after replacing a source photo.
 - Secrets (`FAL_KEY`, `FLYERLY_ADMIN_EMAILS`, `PAYMENT_INSTRUCTIONS`) belong in
   hosting runtime settings or the ignored `.dev.vars`, never in the repo.

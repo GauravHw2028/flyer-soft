@@ -1040,7 +1040,7 @@ export default function Studio() {
             ) : w.loaded ? (
               <>
                 <Check size={15} />
-                {w.unsaved ? "Unsaved changes" : "All changes saved"}
+                All changes saved
               </>
             ) : (
               "Opening workspace…"
@@ -1048,18 +1048,6 @@ export default function Studio() {
             <span className="avatar">{data.brand.name[0]}</span>
           </div>
         </header>
-        {w.auth && (
-          <div className="notice">
-            <span>Sign in to save your products, images and campaigns.</span>
-            <a
-              className="button primary"
-              href="/signin-with-chatgpt?return_to=/"
-              target="_top"
-            >
-              Sign in with ChatGPT
-            </a>
-          </div>
-        )}
         {business.error && w.loaded && (
           <div className="notice error">
             <span>Business settings could not be loaded.</span>

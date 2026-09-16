@@ -26,7 +26,7 @@ writeFileSync(
 if (!existsSync(resolve(root, ".dev.vars")))
   writeFileSync(
     resolve(root, ".dev.vars"),
-    'FLYERLY_ADMIN_EMAILS="seedy@sites.test"\n',
+    'FLYERLY_OWNER_ID="owner"\nFLYERLY_STORE_NAME="Local store workspace"\n',
   );
 const result = spawnSync(
   process.execPath,
