@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       )
       .bind(u.userId)
       .first<{ n: number }>();
-    if ((count?.n || 0) >= 5)
+    if (Number(count?.n ?? 0) >= 5)
       return Response.json(
         { error: "You already have five requests awaiting review." },
         { status: 429 },

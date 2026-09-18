@@ -805,28 +805,24 @@ export default function Studio() {
     setExportError("");
     try {
       const file = await exportFlyer(current, template, format, actualPage);
-      const form = new FormData();
-      form.append(
-        "file",
-        new File([file.blob], file.name, { type: file.blob.type }),
-      );
-      const r = await fetch("/api/exports", { method: "POST", body: form });
-      if (!r.ok) {
-        const error = r.headers
-          .get("content-type")
-          ?.includes("application/json")
-          ? ((await r.json()) as { error?: string }).error
-          : undefined;
-        throw new Error(
-          error ||
-            (r.status === 413
-              ? "This export is too large. Export a single page instead."
-              : "Could not save export. Please try again."),
-        );
-      }
-      const result = (await r.json()) as { url: string };
-      setDownload({ url: result.url, name: file.name });
+      // The file already exists in this browser, so offer it immediately and
+      // only then try to keep a shareable copy in the workspace. Hosting body
+      // limits can reject a large export; the download still works.
+      setDownload({ url: URL.createObjectURL(file.blob), name: file.name });
       toast.success("Your flyer is ready to download");
+      try {
+        const form = new FormData();
+        form.append(
+          "file",
+          new File([file.blob], file.name, { type: file.blob.type }),
+        );
+        const r = await fetch("/api/exports", { method: "POST", body: form });
+        if (!r.ok) return;
+        const result = (await r.json()) as { url: string };
+        setDownload({ url: result.url, name: file.name });
+      } catch {
+        // Keep the local download; the shareable copy is a bonus.
+      }
     } catch (e) {
       setExportError((e as Error).message);
       toast.error((e as Error).message);

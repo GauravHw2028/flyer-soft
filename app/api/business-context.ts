@@ -18,8 +18,12 @@ export async function admin() {
   return identity();
 }
 export async function account(owner: string) {
-  return (await db()
-    .prepare("SELECT COALESCE(SUM(delta),0) AS balance FROM credit_ledger WHERE owner=?")
+  const row = await db()
+    .prepare(
+      "SELECT COALESCE(SUM(delta),0) AS balance FROM credit_ledger WHERE owner=?",
+    )
     .bind(owner)
-    .first<{ balance: number }>())!.balance;
+    .first<{ balance: number | string }>();
+  // Postgres returns SUM() as a string; D1 returns a number.
+  return Number(row?.balance ?? 0);
 }
