@@ -1061,6 +1061,14 @@ export default function Studio() {
             >
               Retry
             </button>
+            <a
+              className="button"
+              href="/api/health"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Connection check
+            </a>
             {w.loaded && (
               <button className="button" onClick={backup}>
                 Download backup

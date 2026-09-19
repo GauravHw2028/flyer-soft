@@ -23,6 +23,9 @@ Node 22.13+ is required. Install using `npm run install:ci`; start with `npm run
 `npm run build` produces the Next.js build that Vercel runs. The local
 Cloudflare Workers build is `npm run build:workers`.
 
+Deployments answer `/api/health` with their storage backend, database
+diagnostics and the exact error when something is misconfigured.
+
 There is no sign-in step. The app reads and writes its own workspace directly.
 Set `FLYERLY_OWNER_ID` when one database serves more than one install, and
 `FLYERLY_STORE_NAME` / `FLYERLY_CONTACT_EMAIL` to label that owner.

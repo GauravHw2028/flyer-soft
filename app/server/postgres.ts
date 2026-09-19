@@ -27,6 +27,7 @@ const CONNECTION_KEYS = [
   "POSTGRES_URL_NON_POOLING",
   "DATABASE_URL_UNPOOLED",
 ];
+const LOCAL_HOSTS = ["localhost", "127.0.0.1", "::1", "host.docker.internal"];
 
 let override: SqlPool | null = null;
 let poolPromise: Promise<SqlPool> | null = null;
@@ -47,6 +48,49 @@ export function connectionString(): string {
     if (value && value.trim()) return value.trim();
   }
   return "";
+}
+
+/** Which environment variable the connection string came from. */
+export function connectionSource(): string | null {
+  for (const key of CONNECTION_KEYS) {
+    const value = process.env[key];
+    if (value && value.trim()) return key;
+  }
+  return null;
+}
+
+export function isLocalHost(host: string): boolean {
+  return LOCAL_HOSTS.includes(host.toLowerCase());
+}
+
+export function connectionHost(url: string): string | null {
+  try {
+    return new URL(url).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Managed Postgres providers terminate TLS with certificates Node does not
+ * always ship, so encrypted-but-unverified is the default outside localhost.
+ * Set FLYERLY_PG_VERIFY_FULL=1 (or sslmode=verify-full) to require a trusted
+ * chain instead.
+ */
+function sslFor(url: string): false | { rejectUnauthorized: boolean } {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (isLocalHost(parsed.hostname)) return false;
+  const mode = (parsed.searchParams.get("sslmode") || "").toLowerCase();
+  if (mode === "disable") return false;
+  if (mode === "verify-full") return { rejectUnauthorized: true };
+  if (process.env.FLYERLY_PG_VERIFY_FULL === "1")
+    return { rejectUnauthorized: true };
+  return { rejectUnauthorized: false };
 }
 
 export function configured(): boolean {
@@ -73,10 +117,67 @@ async function createPool(): Promise<SqlPool> {
   const { Pool } = await import("pg");
   return new Pool({
     connectionString: url,
-    max: 4,
+    ssl: sslFor(url),
+    max: 3,
     idleTimeoutMillis: 10_000,
-    connectionTimeoutMillis: 10_000,
+    // Fail fast so the route can answer with a real error instead of letting
+    // the hosting platform time the request out.
+    connectionTimeoutMillis: 8_000,
+    query_timeout: 15_000,
+    statement_timeout: 15_000,
   }) as unknown as PgPool as unknown as SqlPool;
+}
+
+export type Diagnosis = {
+  configured: boolean;
+  source: string | null;
+  host: string | null;
+  ssl: boolean;
+  reachable: boolean;
+  schemaReady: boolean;
+  serverVersion: string | null;
+  error: string | null;
+};
+
+/** One round trip that explains exactly why storage is or is not working. */
+export async function diagnose(): Promise<Diagnosis> {
+  const url = connectionString();
+  const base: Diagnosis = {
+    configured: Boolean(override) || Boolean(url),
+    source: connectionSource(),
+    host: url ? connectionHost(url) : null,
+    ssl: url ? sslFor(url) !== false : false,
+    reachable: false,
+    schemaReady: false,
+    serverVersion: null,
+    error: null,
+  };
+  if (!base.configured) {
+    base.error =
+      "No Postgres connection string found. Set DATABASE_URL on this deployment.";
+    return base;
+  }
+  try {
+    const client = await (await pool()).connect();
+    try {
+      const version = await client.query("select version() as version");
+      base.reachable = true;
+      base.serverVersion = String(
+        (version.rows[0] as { version?: string })?.version ?? "",
+      ).split(" ").slice(0, 2).join(" ");
+      const table = await client.query(
+        "select to_regclass('public.workspaces') as name",
+      );
+      base.schemaReady = Boolean(
+        (table.rows[0] as { name?: string | null })?.name,
+      );
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    base.error = error instanceof Error ? error.message : String(error);
+  }
+  return base;
 }
 
 export async function query(

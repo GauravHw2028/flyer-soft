@@ -45,6 +45,9 @@ and the same pattern in `app/use-workspace.ts`. Do not add new ones.
 - `next.config.ts` aliases `cloudflare:workers` to
   `build/cloudflare-workers-stub.ts` for the Vercel build. Do not remove that
   alias; the API routes stop building without it.
+- The alias is skipped when `FLYERLY_RUNTIME=workers`, which `run-framework.mjs`
+  and `build-verified.sh` set. vinext also honours resolve.alias, so without that
+  flag the local app loses its D1 and R2 bindings.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

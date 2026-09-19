@@ -32,10 +32,20 @@ export function useWorkspace() {
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/workspace");
-      if (!r.ok)
+      if (!r.ok) {
+        const body = (await r.json().catch(() => null)) as {
+          error?: string;
+          hint?: string;
+        } | null;
         throw new Error(
-          "Your saved workspace could not be loaded. Please retry.",
+          [
+            body?.error || "Your saved workspace could not be loaded.",
+            body?.hint,
+          ]
+            .filter(Boolean)
+            .join(" "),
         );
+      }
       const result = (await r.json()) as {
         data: Workspace | null;
         revision: number;
@@ -72,9 +82,12 @@ export function useWorkspace() {
         }),
       });
       if (!r.ok) {
-        const v = (await r.json()) as { error?: string };
+        const v = (await r.json()) as { error?: string; hint?: string };
         if (r.status === 409) blocked.current = true;
-        throw new Error(v.error || "Save failed. Your edits are still here.");
+        throw new Error(
+          [v.error, v.hint].filter(Boolean).join(" ") ||
+            "Save failed. Your edits are still here.",
+        );
       }
       const v = (await r.json()) as { revision: number };
       revision.current = v.revision;

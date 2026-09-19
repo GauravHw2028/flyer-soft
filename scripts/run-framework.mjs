@@ -6,6 +6,11 @@ const [command, ...args] = process.argv.slice(2);
 if (!["dev", "build"].includes(command)) throw new Error("Expected dev or build.");
 const managedLinux = readExecutionProfile() === "managed-linux";
 
+// This process runs the Cloudflare Workers build, where `cloudflare:workers`
+// resolves to the real runtime module. next.config.ts uses this flag to skip the
+// alias that the Vercel build needs.
+process.env.FLYERLY_RUNTIME = "workers";
+
 if (managedLinux && command === "build") {
   const result = spawnSync("bash", [
     fileURLToPath(new URL("./build-verified.sh", import.meta.url)), ...args,

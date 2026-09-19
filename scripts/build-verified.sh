@@ -18,6 +18,9 @@ if [[ ! -x "${vinext}" ]]; then
   exit 69
 fi
 
+# Keep the real cloudflare:workers module instead of the Vercel build stub.
+export FLYERLY_RUNTIME=workers
+
 echo "Running bounded vinext build..."
 timeout \
   --signal=TERM \

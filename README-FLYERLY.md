@@ -71,6 +71,29 @@ Vercel rejects function request bodies above 4.5 MB, so uploads are capped at
 in the workspace when they fit. Image bytes live in Postgres (`asset_blobs`), so
 one integration is enough to run; swap in Vercel Blob if storage grows.
 
+### When the workspace will not load
+
+Open `/api/health` on the deployment. It reports which backend is in use,
+whether the database answered, what it is, and the exact driver error. The app
+also shows the reason above the workspace with a **Connection check** link, so a
+failure names the cause instead of saying the workspace could not be loaded.
+
+| What you see | What it means | Fix |
+| --- | --- | --- |
+| `database_not_configured` | No connection string on the deployment | Add `DATABASE_URL` in Vercel → Settings → Environment Variables, then redeploy |
+| `database_host_not_found` | The host name does not resolve from Vercel | Supabase: use the pooler host, see below |
+| `database_unreachable` | Connection timed out or was refused | Use the provider's pooled connection string; check that the database is awake |
+| `database_auth_failed` | Wrong user or password | Paste the connection string again, including the password |
+| `database_missing` | The database name at the end of the URL does not exist | Create it or fix the name |
+| `database_permission_denied` | The role cannot create or read tables | Connect as the database owner, or grant it rights on schema `public` |
+
+**Supabase.** The direct host `db.<project>.supabase.co` is IPv6 only, and Vercel
+functions have no outbound IPv6, so that string can never connect. Copy the
+connection string from Project settings → Database → **Connection pooling**
+(`aws-0-<region>.pooler.supabase.com`), which is IPv4. If the password contains
+`@`, `/` or `#`, percent-encode it. SSL is enabled automatically for any host
+outside localhost.
+
 For local development only, `scripts/setup-local.mjs` creates ignored `.dev.vars` with the local mock account as administrator. You may add a development API key there; never commit or share it. Secret values are excluded from the Desktop deliverable and archive.
 
 Database migrations are in `drizzle/`. Hosting applies them during deployment. Credits use an append-only ledger with atomic D1 reservation batches; the balance is calculated from that ledger. Client input cannot set its own balance or administrator role.
