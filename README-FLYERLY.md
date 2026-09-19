@@ -94,6 +94,22 @@ connection string from Project settings → Database → **Connection pooling**
 `@`, `/` or `#`, percent-encode it. SSL is enabled automatically for any host
 outside localhost.
 
+The **Transaction pooler** (port 6543) is what this app is tested against on
+Supabase; the credit batches and schema creation both run through it. The
+**Session pooler** (port 5432 on the same pooler host) is the fallback if a
+provider's transaction mode ever misbehaves, and the direct connection is only
+usable from a network that has IPv6.
+
+After changing the database password, put the new string in `.dev.vars` and run:
+
+```text
+node scripts/push-database-url-to-vercel.mjs flyer-soft flyer-soft-gf55
+```
+
+That writes `DATABASE_URL` to the Production and Preview environments of each
+project without the value appearing in the command line or output. Redeploy
+afterwards. It needs the Vercel CLI to be logged in (`npx vercel login`).
+
 For local development only, `scripts/setup-local.mjs` creates ignored `.dev.vars` with the local mock account as administrator. You may add a development API key there; never commit or share it. Secret values are excluded from the Desktop deliverable and archive.
 
 Database migrations are in `drizzle/`. Hosting applies them during deployment. Credits use an append-only ledger with atomic D1 reservation batches; the balance is calculated from that ledger. Client input cannot set its own balance or administrator role.
