@@ -1,11 +1,9 @@
 import { env } from "cloudflare:workers";
 
 /**
- * Flyerly owns its data directly. One install is one workspace, so there is no
- * third-party identity provider in the request path: the owner id comes from
- * configuration and every route reads straight from it.
- *
- * Set `FLYERLY_OWNER_ID` when more than one install shares a single database.
+ * Accounts own their own workspaces; this module holds configuration and the
+ * single workspace key an install used before accounts existed, which the first
+ * sign-up inherits.
  */
 export type WorkspaceUser = {
   userId: string;
@@ -39,13 +37,4 @@ export function storeName(): string {
 
 export function contactEmail(): string {
   return setting("FLYERLY_CONTACT_EMAIL") || "owner@localhost";
-}
-
-export async function getWorkspaceUser(): Promise<WorkspaceUser> {
-  return {
-    userId: workspaceOwnerId(),
-    displayName: storeName(),
-    email: contactEmail(),
-    fullName: null,
-  };
 }

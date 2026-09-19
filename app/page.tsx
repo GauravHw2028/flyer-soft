@@ -1,2 +1,4 @@
-import Studio from './studio';
-export default function Home(){ return <Studio/>; }
+import AppShell from "./app-shell";
+export default function Home() {
+  return <AppShell />;
+}

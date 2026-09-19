@@ -20,10 +20,11 @@ and the same pattern in `app/use-workspace.ts`. Do not add new ones.
 
 ## Product rules worth keeping
 
-- The app owns its own workspace. There is no sign-in provider: routes read the
-  owner id from `app/workspace-owner.ts`, and `.dev.vars` or the hosting runtime
-  supplies `FLYERLY_OWNER_ID`, `FLYERLY_STORE_NAME` and `FLYERLY_CONTACT_EMAIL`.
-  Do not reintroduce a third-party identity dependency without being asked.
+- Accounts own workspaces: `owner()` in `app/api/_shared.ts` resolves the signed
+  in account and every record is keyed by that id. `app/server/accounts.ts` holds
+  hashing and sessions, `app/server/session.ts` reads the cookie, and the first
+  account on an install adopts the pre-accounts workspace. Never fall back to a
+  shared owner for a signed-out request; return 401 instead.
 - Product cards live in `app/flyer-layout.ts`. `slotRects()` is the template
   grid; `pageRects()` applies each product's saved `box` on top of it. Every
   renderer (base, artwork, Wear Mart) must read geometry from `pageRects()` so

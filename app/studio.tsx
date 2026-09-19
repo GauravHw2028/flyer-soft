@@ -28,6 +28,7 @@ import {
   X,
   Move,
   LayoutGrid,
+  LogOut,
 } from "lucide-react";
 import {
   SidebarProvider,
@@ -528,7 +529,11 @@ function LayoutLayer({
   );
 }
 
-export default function Studio() {
+export default function Studio({
+  account,
+}: {
+  account: { id: string; email: string; storeName: string };
+}) {
   const w = useWorkspace();
   const { data, update } = w;
   const business = useBusiness();
@@ -898,6 +903,17 @@ export default function Studio() {
       "flyerly-workspace-backup.json",
     );
   }
+  async function signOut() {
+    try {
+      await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "logout" }),
+      });
+    } finally {
+      window.location.reload();
+    }
+  }
   useEffect(() => {
     const context = (
       document as unknown as {
@@ -1009,8 +1025,16 @@ export default function Studio() {
             <span>{data.brand.name.slice(0, 2)}</span>
             <div>
               <b>{data.brand.name}</b>
-              <small>Private store workspace</small>
+              <small title={account.email}>{account.email}</small>
             </div>
+            <button
+              className="bare sign-out"
+              title="Sign out"
+              aria-label="Sign out"
+              onClick={() => void signOut()}
+            >
+              <LogOut size={15} />
+            </button>
           </div>
         </SidebarFooter>
       </Sidebar>

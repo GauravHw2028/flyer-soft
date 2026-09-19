@@ -254,6 +254,20 @@ async function migrate(): Promise<void> {
        result text,
        created text not null
      )`,
+    `create table if not exists accounts (
+       id text primary key,
+       email text not null unique,
+       password_hash text not null,
+       store_name text not null default 'My store',
+       created text not null
+     )`,
+    `create table if not exists sessions (
+       token text primary key,
+       account_id text not null,
+       created text not null,
+       expires text not null
+     )`,
+    `create index if not exists idx_sessions_account on sessions (account_id)`,
     // The ledger is the source of truth, so rebuild the cached balance from it.
     `insert into credit_accounts (owner, balance)
        select owner, coalesce(sum(delta), 0)::int from credit_ledger group by owner

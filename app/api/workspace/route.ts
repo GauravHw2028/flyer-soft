@@ -29,29 +29,10 @@ function modernWorkspace<T extends Record<string, unknown>>(data: T): T {
 export async function GET() {
   try {
     const id = await owner();
-    let row = await db()
+    const row = await db()
       .prepare("SELECT data, revision FROM workspaces WHERE owner = ?")
       .bind(id)
       .first<{ data: string; revision: number }>();
-    if (!row) {
-      // Adopt a workspace saved by an earlier install of this app so an
-      // upgrade never looks like an empty account.
-      const previous = await db()
-        .prepare(
-          "SELECT owner FROM workspaces ORDER BY updated DESC LIMIT 1",
-        )
-        .first<{ owner: string }>();
-      if (previous && previous.owner !== id) {
-        await db()
-          .prepare("UPDATE workspaces SET owner = ? WHERE owner = ?")
-          .bind(id, previous.owner)
-          .run();
-        row = await db()
-          .prepare("SELECT data, revision FROM workspaces WHERE owner = ?")
-          .bind(id)
-          .first<{ data: string; revision: number }>();
-      }
-    }
     return Response.json(
       row
         ? {

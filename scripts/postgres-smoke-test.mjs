@@ -73,12 +73,20 @@ const workspace = {
 const client = new pg.Client({ connectionString });
 await client.connect();
 await client.query(
-  "truncate workspaces, assets, asset_blobs, businesses, topups, credit_ledger, credit_accounts",
+  "truncate workspaces, assets, asset_blobs, businesses, topups, credit_ledger, credit_accounts, enhancements, accounts, sessions",
 );
 await client.end();
 
+let cookie = "";
+
 const json = async (path, options = {}) => {
-  const response = await fetch(base + path, options);
+  const response = await fetch(base + path, {
+    ...options,
+    headers: {
+      ...(cookie ? { cookie } : {}),
+      ...(options.headers || {}),
+    },
+  });
   const text = await response.text();
   let body;
   try {
@@ -86,7 +94,12 @@ const json = async (path, options = {}) => {
   } catch {
     body = text;
   }
-  return { status: response.status, body };
+  const setCookie = response.headers
+    .getSetCookie()
+    .map((value) => value.split(";")[0])
+    .filter((value) => value.startsWith("flyerly_session="))
+    .join("; ");
+  return { status: response.status, body, setCookie };
 };
 const send = (method, body) =>
   json("/api/workspace", {
@@ -94,6 +107,22 @@ const send = (method, body) =>
     headers: { "Content-Type": "application/json", Origin: base },
     body: JSON.stringify(body),
   });
+
+// An account has to exist before any storage route answers.
+const signup = await json("/api/auth", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Origin: base },
+  body: JSON.stringify({
+    action: "signup",
+    email: "storage-test@example.com",
+    password: "storage test password",
+    storeName: "Storage test",
+  }),
+});
+assert.equal(signup.status, 200, `sign up: ${JSON.stringify(signup.body)}`);
+cookie = signup.setCookie;
+assert.ok(cookie, "session cookie");
+const accountId = signup.body.account.id;
 
 const empty = await json("/api/workspace");
 assert.equal(empty.status, 200, "workspace read");
@@ -117,13 +146,13 @@ const form = new FormData();
 form.append("file", new File([bytes], "bananas.png", { type: "image/png" }));
 const upload = await fetch(base + "/api/assets", {
   method: "POST",
-  headers: { Origin: base },
+  headers: { Origin: base, cookie },
   body: form,
 });
 assert.equal(upload.status, 200, `upload: ${await upload.clone().text()}`);
 const asset = await upload.json();
 
-const image = await fetch(base + asset.url);
+const image = await fetch(base + asset.url, { headers: { cookie } });
 assert.equal(image.status, 200);
 assert.equal(
   new Uint8Array(await image.arrayBuffer()).length,
@@ -145,6 +174,7 @@ const crossOrigin = await fetch(base + "/api/workspace", {
   headers: {
     "Content-Type": "application/json",
     Origin: "https://foreign.example",
+    cookie,
   },
   body: JSON.stringify({ data: workspace, revision: 2 }),
 });
@@ -206,13 +236,14 @@ let guard = "";
 try {
   await ledger.query(
     "insert into credit_ledger (id, owner, delta, reason, created) values ($1, $2, -99, $3, $4)",
-    [crypto.randomUUID(), "owner", "QA overdraw", new Date().toISOString()],
+    [crypto.randomUUID(), accountId, "QA overdraw", new Date().toISOString()],
   );
 } catch (error) {
   guard = String(error.message);
 }
 const after = await ledger.query(
-  "select coalesce(sum(delta),0)::int as balance from credit_ledger where owner = 'owner'",
+  "select coalesce(sum(delta),0)::int as balance from credit_ledger where owner = $1",
+  [accountId],
 );
 await ledger.end();
 assert.match(guard, /Insufficient credits/, "overdraw blocked");

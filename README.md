@@ -14,6 +14,7 @@ A private supermarket flyer studio with a persistent product library, image uplo
 - One SVG renderer for the preview and A4 multipage exports.
 - 2480 x 3508 PNG, multipage A4 PDF and embedded-image SVG downloads.
 - Self-owned install: one workspace per install, no third-party identity provider.
+- Email and password accounts: each account keeps its own products, campaigns and images.
 - Responsive workspace and read-only WebMCP flyer inspection.
 
 ## Development

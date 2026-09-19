@@ -137,6 +137,29 @@ grid** puts every card back on the template grid.
 Each card's position is stored as `box` on its campaign item, clamped to the
 page, and is used by the on-screen preview and by the PNG, PDF and SVG exports.
 
+## Accounts
+
+People sign up with an email and password, and each account owns its own
+products, campaigns, templates, credits and uploaded images. There is no email
+verification step: a new account works immediately. Passwords are hashed with
+PBKDF2-SHA256 through Web Crypto, so the same code runs in Node and in the
+Workers runtime, and sessions live in a `sessions` table behind an HttpOnly
+cookie that lasts 60 days.
+
+The first account created on an install inherits the workspace that existed
+before accounts were introduced, which is how an upgrade keeps its campaigns.
+Later accounts start empty, and `node scripts/account-smoke-test.mjs` covers
+that promise along with sign in, sign out and isolation between accounts.
+
+Set `FLYERLY_ADMIN_EMAILS` to a comma-separated list to keep the Business admin
+and credit approval screens to those accounts. Leave it unset and every account
+has full access, which is the current pilot behaviour. Sign out from the sidebar
+footer, next to the account email.
+
+Relevant routes: `POST /api/auth` (`signup`, `login`, `logout`),
+`GET /api/session` (`account` and whether any account exists yet), and
+`GET /api/health` for storage diagnostics.
+
 ## Verification
 
 ```text

@@ -1,0 +1,53 @@
+import { env } from "cloudflare:workers";
+import { workspaceOwnerId } from "../workspace-owner";
+import {
+  d1Database,
+  isD1,
+  postgresDatabase,
+  type SqlDatabase,
+} from "./database";
+import { isR2, postgresObjects, r2Bucket, type ObjectStore } from "./objects";
+import { storageFailure } from "./storage-failure";
+
+/** Worker bindings locally; plain environment variables on Vercel. */
+export function bindings() {
+  return env as unknown as Record<string, unknown>;
+}
+
+export function db(): SqlDatabase {
+  const binding = bindings().DB;
+  if (isD1(binding)) return d1Database(binding);
+  return postgresDatabase();
+}
+
+export function bucket(): ObjectStore {
+  const binding = bindings().BUCKET;
+  if (isR2(binding)) return r2Bucket(binding);
+  return postgresObjects();
+}
+
+/**
+ * Vercel rejects function request bodies above 4.5 MB before the route runs, so
+ * the enforced upload ceiling follows whichever backend is in use.
+ */
+export function maxUploadBytes() {
+  const configured = Number(bindings().FLYERLY_MAX_UPLOAD_MB);
+  if (Number.isFinite(configured) && configured > 0)
+    return Math.round(configured * 1024 * 1024);
+  return isR2(bindings().BUCKET) ? 8 * 1024 * 1024 : 4 * 1024 * 1024;
+}
+
+export function failure(error: unknown) {
+  if (error instanceof Response) return error;
+  const advice = storageFailure(error);
+  console.error("Flyerly storage error", advice.code, error);
+  return Response.json(
+    { error: advice.error, code: advice.code, hint: advice.hint },
+    { status: advice.status },
+  );
+}
+
+/** The workspace key an unsigned install would use, for scripts and migrations. */
+export function legacyOwnerId() {
+  return workspaceOwnerId();
+}
