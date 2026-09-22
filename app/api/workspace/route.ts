@@ -97,6 +97,15 @@ export async function PUT(req: Request) {
     }
     if (parsed.data.brand.logo.startsWith("/api/assets/"))
       images.add(parsed.data.brand.logo.split("/").pop()!);
+    if (parsed.data.businesses) {
+      for (const b of parsed.data.businesses) {
+        if (b.profile?.logo?.startsWith("/api/assets/"))
+          images.add(b.profile.logo.split("/").pop()!);
+        for (const p of b.products || [])
+          if (p.image?.startsWith("/api/assets/"))
+            images.add(p.image.split("/").pop()!);
+      }
+    }
     if (images.size) {
       const rows = await db()
         .prepare("SELECT id FROM assets WHERE owner = ?")

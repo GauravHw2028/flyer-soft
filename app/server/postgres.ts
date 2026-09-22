@@ -218,11 +218,14 @@ async function migrate(): Promise<void> {
      )`,
     `create table if not exists businesses (
        id text primary key,
-       email text not null unique,
+       email text not null,
        name text not null,
        templates text not null default '[]',
        created text not null
      )`,
+    `alter table businesses add column if not exists owner text`,
+    `alter table businesses add column if not exists profile text`,
+    `alter table businesses drop constraint if exists businesses_email_key`,
     `create table if not exists credit_accounts (
        owner text primary key,
        balance integer not null default 0

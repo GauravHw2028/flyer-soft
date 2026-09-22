@@ -19,6 +19,9 @@ export function slotNumber(c: Campaign, index: number) {
   return c.items[index].slot ?? index;
 }
 export function pageCount(c: Campaign, t: Template) {
+  if (c.flyerDoc?.pages && c.flyerDoc.pages.length > 0) {
+    return c.flyerDoc.pages.length;
+  }
   return Math.max(
     1,
     Math.ceil(

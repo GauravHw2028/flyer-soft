@@ -1,47 +1,54 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  LayoutTemplate,
-  Package,
-  Files,
-  Store,
-  Plus,
-  ArrowUpRight,
-  Download,
-  Check,
-  Leaf,
-  Search,
-  Upload,
-  Copy,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  ArrowUp,
-  ArrowDown,
-  Undo2,
-  Redo2,
-  Loader2,
-  ImagePlus,
-  FolderOpen,
-  Save,
-  AlertCircle,
-  X,
-  Move,
-  LayoutGrid,
-  LogOut,
-} from "lucide-react";
+  templates,
+  sampleProducts,
+  defaultBrand,
+  newFlyer,
+  flyerToCampaign,
+  migrateCampaignToFlyer,
+  Product,
+  Campaign,
+  Brand,
+  Template,
+  Offer,
+  FlyerDocument,
+  FlyerPage,
+  FlyerSection,
+  GridModel,
+  BusinessRecord,
+  BusinessProfile,
+  brandToBusinessProfile,
+  defaultBackgroundPresets,
+} from "./model";
+import { useWorkspace } from "./use-workspace";
+import { exportFlyer, campaignIssues, downloadBlob } from "./flyer";
+import { renderPageSvg } from "./flyer-renderer";
+import {
+  useBusiness,
+  CreditPanel,
+  AdminPanel,
+  LocationFields,
+} from "./business-ui";
+import { wearMartTemplates, wearMartBrand } from "./wear-mart";
+import { productSchema } from "./validation";
+import { BusinessSwitcher } from "../components/flyer/business-switcher";
+import { GridEditorControls } from "../components/flyer/grid-editor";
+import { PageManager } from "../components/flyer/page-manager";
+import { SectionManager } from "../components/flyer/section-manager";
+import {
+  ProductPickerModal,
+  BulkProductFillModal,
+} from "../components/flyer/product-picker-modal";
+
 import {
   SidebarProvider,
   Sidebar,
   SidebarHeader,
   SidebarContent,
   SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarFooter,
-  SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -50,2588 +57,1384 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from "@/components/ui/alert-dialog";
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from "@/components/ui/table";
-import { Toaster } from "@/components/ui/sonner";
+  LayoutTemplate,
+  Package,
+  Files,
+  Store,
+  Plus,
+  Download,
+  Check,
+  Leaf,
+  Upload,
+  ChevronLeft,
+  ChevronRight,
+  Undo2,
+  Redo2,
+  Loader2,
+  AlertCircle,
+  Layers,
+  Sparkles,
+  LogOut,
+  Shield,
+  Palette,
+} from "lucide-react";
 import { toast } from "sonner";
-import {
-  templates,
-  sampleProducts,
-  defaultBrand,
-  newCampaign,
-  Product,
-  Campaign,
-  Brand,
-  Template,
-  Offer,
-  Box,
-} from "./model";
-import { useWorkspace } from "./use-workspace";
-import { flyerSvg, exportFlyer, campaignIssues, downloadBlob } from "./flyer";
-import {
-  useBusiness,
-  CreditPanel,
-  AdminPanel,
-  SlotEditor,
-  LocationFields,
-  EnhanceButton,
-} from "./business-ui";
-import { wearMartTemplates, wearMartBrand } from "./wear-mart";
-import {
-  pageCount,
-  slotNumber,
-  pageRects,
-  fitBox,
-  Rect,
-  PAGE_W,
-  PAGE_H,
-  clamp,
-  MIN_BOX_W,
-  MIN_BOX_H,
-} from "./flyer-layout";
-import { productSchema } from "./validation";
+import type { SessionAccount } from "./account-ui";
 
 const uid = () => crypto.randomUUID();
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
-function Choice({
-  value,
-  onChange,
-  options,
-  label,
-}: {
-  value: string;
-  onChange: (s: string) => void;
-  options: { value: string; label: string }[];
-  label: string;
-}) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger aria-label={label} className="select-control">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-function Thumb({ product }: { product: Product }) {
-  return product.image ? (
-    <img
-      className="product-placeholder"
-      src={product.image}
-      alt={product.name}
-    />
-  ) : (
-    <div className="product-placeholder">
-      <Package size={22} />
-    </div>
-  );
-}
-async function upload(file: File) {
-  const form = new FormData();
-  form.append("file", file);
-  const r = await fetch("/api/assets", { method: "POST", body: form });
-  const v = (await r.json()) as { url: string; error?: string };
-  if (!r.ok) throw new Error(v.error || "Image upload failed");
-  return v.url as string;
-}
-function parseCsv(input: string) {
-  const rows: string[][] = [];
-  let row: string[] = [],
-    cell = "",
-    quoted = false;
-  for (let i = 0; i < input.length; i++) {
-    const c = input[i];
-    if (c === '"') {
-      if (quoted && input[i + 1] === '"') {
-        cell += '"';
-        i++;
-      } else quoted = !quoted;
-    } else if (c === "," && !quoted) {
-      row.push(cell);
-      cell = "";
-    } else if ((c === "\n" || c === "\r") && !quoted) {
-      if (c === "\r" && input[i + 1] === "\n") i++;
-      row.push(cell);
-      if (row.some((v) => v.trim())) rows.push(row);
-      row = [];
-      cell = "";
-    } else cell += c;
-  }
-  if (quoted) throw new Error("Unclosed quotation mark in CSV.");
-  row.push(cell);
-  if (row.some((v) => v.trim())) rows.push(row);
-  if (rows.length < 2)
-    throw new Error("Add a header and at least one product.");
-  const headers = rows.shift()!.map((x) =>
-    x
-      .replace(/^\uFEFF/, "")
-      .trim()
-      .toLowerCase(),
-  );
-  if (!headers.includes("name") || !headers.includes("price"))
-    throw new Error("CSV needs name and price columns.");
-  return rows.map((r, i) => {
-    const get = (key: string) => r[headers.indexOf(key)]?.trim() || "";
-    const rawPrice = get("price");
-    if (!rawPrice) throw new Error(`Row ${i + 2}: price is missing.`);
-    const result = productSchema.safeParse({
-      id: uid(),
-      name: get("name"),
-      pack: get("pack"),
-      category: get("category") || "Other",
-      price: Number(rawPrice),
-      image: "",
-      sku: get("sku"),
-    });
-    if (!result.success)
-      throw new Error(`Row ${i + 2}: ${result.error.issues[0].message}`);
-    return result.data;
-  });
-}
 
-type LayoutEntry = { slot: number; box: Rect; offer?: Offer };
-
-const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
-const HANDLE_CURSOR: Record<string, string> = {
-  nw: "nwse-resize",
-  n: "ns-resize",
-  ne: "nesw-resize",
-  e: "ew-resize",
-  se: "nwse-resize",
-  s: "ns-resize",
-  sw: "nesw-resize",
-  w: "ew-resize",
-};
-
-function handlePoint(mode: string, box: Rect) {
-  const midX = box.x + box.w / 2,
-    midY = box.y + box.h / 2;
-  return {
-    x: mode.includes("w") ? box.x : mode.includes("e") ? box.x + box.w : midX,
-    y: mode.includes("n") ? box.y : mode.includes("s") ? box.y + box.h : midY,
-  };
-}
-
-/**
- * Drag-and-drop layer for product cards. It renders on top of the flyer so a
- * drag stays smooth: only this layer re-renders while the pointer moves, and
- * the finished position is written to the campaign once on release.
- */
-function LayoutLayer({
-  entries,
-  color,
-  accent,
-  currency,
-  onSelect,
-  onCommit,
-}: {
-  entries: LayoutEntry[];
-  color: string;
-  accent: string;
-  currency: string;
-  onSelect: (slot: number) => void;
-  onCommit: (slot: number, box: Box | null) => void;
-}) {
-  const ref = useRef<SVGSVGElement>(null);
-  const drag = useRef<{
-    mode: string;
-    slot: number;
-    origin: Box;
-    from: { x: number; y: number };
-    box: Box;
-  } | null>(null);
-  const [live, setLive] = useState<{ slot: number; box: Box } | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
-
-  function units(clientX: number, clientY: number) {
-    const rect = ref.current?.getBoundingClientRect();
-    if (!rect || !rect.width || !rect.height) return { x: 0, y: 0 };
-    return {
-      x: ((clientX - rect.left) / rect.width) * PAGE_W,
-      y: ((clientY - rect.top) / rect.height) * PAGE_H,
-    };
-  }
-
-  function down(e: React.PointerEvent<SVGSVGElement>) {
-    const target = e.target as Element;
-    const add = target.closest("[data-box-add]");
-    if (add) {
-      onSelect(Number(add.getAttribute("data-box-add")));
-      return;
-    }
-    const handle = target.closest("[data-box-handle]");
-    const body = target.closest("[data-box-move]");
-    const el = handle || body;
-    if (!el) return;
-    const slot = Number(el.getAttribute("data-slot"));
-    const entry = entries.find((s) => s.slot === slot);
-    if (!entry?.offer) return;
-    e.stopPropagation();
-    e.preventDefault();
-    setSelected(slot);
-    drag.current = {
-      mode: handle ? String(handle.getAttribute("data-box-handle")) : "move",
-      slot,
-      origin: { ...entry.box },
-      from: units(e.clientX, e.clientY),
-      box: { ...entry.box },
-    };
-    setLive({ slot, box: { ...entry.box } });
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }
-
-  function move(e: React.PointerEvent<SVGSVGElement>) {
-    const state = drag.current;
-    if (!state) return;
-    const at = units(e.clientX, e.clientY),
-      dx = at.x - state.from.x,
-      dy = at.y - state.from.y,
-      snap = (v: number) => Math.round(v / 2) * 2,
-      o = state.origin;
-    let next: Box = { ...o };
-    if (state.mode === "move") next = { ...o, x: snap(o.x + dx), y: snap(o.y + dy) };
-    else {
-      let { x, y, w, h } = o;
-      if (state.mode.includes("w")) {
-        x = clamp(6, snap(o.x + dx), o.x + o.w - MIN_BOX_W);
-        w = o.x + o.w - x;
-      }
-      if (state.mode.includes("e"))
-        w = clamp(MIN_BOX_W, snap(o.w + dx), PAGE_W - 6 - o.x);
-      if (state.mode.includes("n")) {
-        y = clamp(6, snap(o.y + dy), o.y + o.h - MIN_BOX_H);
-        h = o.y + o.h - y;
-      }
-      if (state.mode.includes("s"))
-        h = clamp(MIN_BOX_H, snap(o.h + dy), PAGE_H - 6 - o.y);
-      next = { x, y, w, h };
-    }
-    const box = fitBox(next);
-    state.box = box;
-    setLive({ slot: state.slot, box });
-  }
-
-  function up(e: React.PointerEvent<SVGSVGElement>) {
-    const state = drag.current;
-    drag.current = null;
-    setLive(null);
-    if (e.currentTarget.hasPointerCapture?.(e.pointerId))
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    if (!state) return;
-    const o = state.origin,
-      b = state.box;
-    if (b.x !== o.x || b.y !== o.y || b.w !== o.w || b.h !== o.h)
-      onCommit(state.slot, b);
-  }
-
-  function key(e: React.KeyboardEvent<SVGSVGElement>) {
-    if (e.key === "Escape") return setSelected(null);
-    if (selected === null) return;
-    const step = e.shiftKey ? 10 : 2;
-    const delta: Record<string, [number, number]> = {
-      ArrowLeft: [-step, 0],
-      ArrowRight: [step, 0],
-      ArrowUp: [0, -step],
-      ArrowDown: [0, step],
-    };
-    const d = delta[e.key];
-    if (!d) return;
-    const entry = entries.find((s) => s.slot === selected);
-    if (!entry) return;
-    e.preventDefault();
-    onCommit(
-      selected,
-      fitBox({ ...entry.box, x: entry.box.x + d[0], y: entry.box.y + d[1] }),
-    );
-  }
-
-  return (
-    <svg
-      ref={ref}
-      className="layout-layer"
-      viewBox={`0 0 ${PAGE_W} ${PAGE_H}`}
-      fontFamily="Arial,Helvetica,sans-serif"
-      role="application"
-      aria-label="Move and resize product cards"
-      tabIndex={0}
-      style={{ pointerEvents: "none" }}
-      onPointerDown={down}
-      onPointerMove={move}
-      onPointerUp={up}
-      onPointerCancel={up}
-      onKeyDown={key}
-    >
-      {[...entries]
-        .sort(
-          (a, b) =>
-            Number(a.slot === selected || a.slot === live?.slot) -
-            Number(b.slot === selected || b.slot === live?.slot),
-        )
-        .map(({ slot, box, offer }) => {
-        const b = live?.slot === slot ? live.box : box,
-          chosen = selected === slot,
-          active = live?.slot === slot;
-        return (
-          <g key={slot}>
-            <rect
-              x={b.x}
-              y={b.y}
-              width={b.w}
-              height={b.h}
-              rx={4}
-              fill={
-                !offer
-                  ? "rgba(20,90,64,.07)"
-                  : active
-                    ? "#ffffff"
-                    : "rgba(255,255,255,.16)"
-              }
-              stroke={chosen ? accent : color}
-              strokeWidth={chosen ? 3 : 1.6}
-              strokeDasharray={offer ? "7 5" : "4 6"}
-            />
-            {!offer && (
-              <text
-                x={b.x + b.w / 2}
-                y={b.y + b.h / 2}
-                textAnchor="middle"
-                fontSize="15"
-                fill="#3f6d57"
-              >
-                + Choose product
-              </text>
-            )}
-            {offer && active && (
-              <>
-                {offer.image && (
-                  <image
-                    href={offer.image}
-                    x={b.x + 8}
-                    y={b.y + 8}
-                    width={Math.max(8, b.w - 16)}
-                    height={Math.max(8, b.h - 54)}
-                    preserveAspectRatio="xMidYMid meet"
-                    opacity=".92"
-                  />
-                )}
-                <text
-                  x={b.x + b.w / 2}
-                  y={b.y + b.h - 32}
-                  textAnchor="middle"
-                  fontSize={clamp(9, b.w * 0.06, 15)}
-                  fill="#2b3a33"
-                >
-                  {offer.name.slice(0, 26)}
-                </text>
-                <text
-                  x={b.x + b.w - 12}
-                  y={b.y + b.h - 10}
-                  textAnchor="end"
-                  fontSize={clamp(11, b.w * 0.09, 22)}
-                  fontWeight="800"
-                  fill={color}
-                >
-                  {currency} {offer.offer.toFixed(2)}
-                </text>
-              </>
-            )}
-            {offer ? (
-              <rect
-                data-box-move="1"
-                data-slot={slot}
-                x={b.x}
-                y={b.y}
-                width={b.w}
-                height={b.h}
-                fill="transparent"
-                style={{ pointerEvents: "auto", cursor: "move" }}
-              />
-            ) : (
-              <rect
-                data-box-add={slot}
-                x={b.x}
-                y={b.y}
-                width={b.w}
-                height={b.h}
-                fill="transparent"
-                style={{ pointerEvents: "auto", cursor: "pointer" }}
-              />
-            )}
-            {chosen &&
-              offer &&
-              HANDLES.map((mode) => {
-                const point = handlePoint(mode, b);
-                return (
-                  <rect
-                    key={mode}
-                    data-box-handle={mode}
-                    data-slot={slot}
-                    x={point.x - 9}
-                    y={point.y - 9}
-                    width={18}
-                    height={18}
-                    rx={4}
-                    fill="#ffffff"
-                    stroke={color}
-                    strokeWidth="3"
-                    style={{
-                      pointerEvents: "auto",
-                      cursor: HANDLE_CURSOR[mode],
-                    }}
-                  />
-                );
-              })}
-          </g>
-        );
-        })}
-    </svg>
-  );
-}
-
-export default function Studio({
-  account,
-}: {
-  account: { id: string; email: string; storeName: string };
-}) {
+export default function Studio({ account }: { account: SessionAccount }) {
   const w = useWorkspace();
-  const { data, update } = w;
-  const business = useBusiness();
-  const [slot, setSlot] = useState<number | null>(null);
-  const [view, setView] = useState("Campaign studio"),
-    [selected, setSelected] = useState(""),
-    [tab, setTab] = useState("products"),
-    [search, setSearch] = useState(""),
-    [filter, setFilter] = useState("All"),
-    [page, setPage] = useState(0);
-  const [modal, setModal] = useState<
-      "product" | "picker" | "export" | "template" | "csv" | null
-    >(null),
-    [product, setProduct] = useState<Product | null>(null),
-    [csvRows, setCsvRows] = useState<Product[]>([]),
-    [busy, setBusy] = useState(false),
-    [exporting, setExporting] = useState(false),
-    [download, setDownload] = useState<{ url: string; name: string } | null>(
-      null,
-    ),
-    [exportError, setExportError] = useState(""),
-    [confirm, setConfirm] = useState<{
-      kind: "product" | "campaign";
-      id: string;
-    } | null>(null);
-  const [undo, setUndo] = useState<Campaign[]>([]),
-    [redo, setRedo] = useState<Campaign[]>([]),
-    [layoutMode, setLayoutMode] = useState(false),
-    [newTemplate, setNewTemplate] = useState<Template>({
-      ...templates[0],
-      id: "",
-      name: "My market template",
-      style: "custom",
-    });
-  const demo = useMemo(
-    () => ({ ...newCampaign(defaultBrand, sampleProducts, true), id: "demo" }),
-    [],
-  );
-  const current =
-    data.campaigns.find((c) => c.id === selected) || data.campaigns[0] || demo;
-  const isDemo = current.id === "demo";
-  const allTemplates = [
-    ...templates.filter((t) => t.artwork),
-    ...templates.filter((t) => !t.artwork),
-    ...data.customTemplates,
-    ...(business.info?.business?.templates || []),
-    ...(business.info?.isAdmin
-      ? wearMartTemplates.filter(
-          (t) => !business.info?.business?.templates.some((a) => a.id === t.id),
-        )
-      : []),
-  ];
-  const template =
-    current.templateSnapshot ||
-    allTemplates.find((t) => t.id === current.template) ||
-    templates[0];
-  const pages = pageCount(current, template);
-  const actualPage = Math.min(page, pages - 1);
-  const bulkInput = useRef<HTMLInputElement>(null),
-    csvInput = useRef<HTMLInputElement>(null);
-  const campaignRef = useRef(current);
-  campaignRef.current = current;
-  const [brandDraft, setBrandDraft] = useState<Brand | null>(null);
-  const brand = brandDraft || data.brand;
-  const canEdit = w.loaded && !busy;
-  const issues = campaignIssues(current);
-  useEffect(() => {
-    setPage(0);
-  }, [selected, current.template]);
-  useEffect(() => {
-    setDownload(null);
-    setExportError("");
-  }, [current.updated, actualPage]);
-  function navigate(v: string) {
-    setView(v);
-    setSearch("");
-    setFilter("All");
-  }
-  function openCampaign(c: Campaign) {
-    setSelected(c.id);
-    setView("Campaign studio");
-    setUndo([]);
-    setRedo([]);
-    setPage(0);
-  }
-  function startCampaign(withSample = false) {
-    if (!w.loaded) return;
-    const c = newCampaign(
-      data.brand,
-      withSample ? sampleProducts : [],
-      withSample,
-    );
-    update((d) => ({
-      ...d,
-      campaigns: [c, ...d.campaigns],
-      products: withSample
-        ? [
-            ...d.products,
-            ...sampleProducts.filter(
-              (p) => !d.products.some((x) => x.id === p.id),
-            ),
-          ]
-        : d.products,
-    }));
-    openCampaign(c);
-    toast.success(
-      withSample
-        ? "Sample campaign added. Change anything to make it yours."
-        : "New campaign created",
-    );
-  }
-  function edit(change: Partial<Campaign>, history = true) {
-    if (!w.loaded) return;
-    const old = current;
-    if (history) {
-      setUndo((a) => [...a.slice(-29), structuredClone(old)]);
-      setRedo([]);
-    }
-    const id = isDemo ? uid() : old.id;
-    update((d) => {
-      const latest = d.campaigns.find((c) => c.id === old.id) || old;
-      const next = {
-        ...latest,
-        ...change,
-        id,
-        updated: new Date().toISOString(),
-        status: change.status || ("draft" as const),
-        templateSnapshot: change.template
-          ? {
-              ...(allTemplates.find((t) => t.id === change.template) ||
-                templates[0]),
-            }
-          : change.templateSnapshot ||
-            latest.templateSnapshot || { ...template },
-      };
-      return {
-        ...d,
-        campaigns: isDemo
-          ? [next, ...d.campaigns]
-          : d.campaigns.map((c) => (c.id === old.id ? next : c)),
-        products: isDemo
-          ? [
-              ...d.products,
-              ...sampleProducts.filter(
-                (p) => !d.products.some((x) => x.id === p.id),
-              ),
-            ]
-          : d.products,
-      };
-    });
-    if (isDemo) setSelected(id);
-  }
+  const { data, update, saving, error: syncError, recoveredDraft, restoreDraft, discardDraft } = w;
+  const businessContext = useBusiness();
 
-  function changeItem(index: number, change: Partial<Offer>) {
-    edit({
-      items: current.items.map((p, i) =>
-        i === index ? { ...p, ...change } : p,
-      ),
-    });
-  }
-  function reorder(index: number, delta: number) {
-    const items = current.items.map((p, i) => ({
-      ...p,
-      slot: slotNumber(current, i),
-    }));
-    const a = items[index].slot;
-    items[index].slot = items[index + delta].slot;
-    items[index + delta].slot = a;
-    [items[index], items[index + delta]] = [items[index + delta], items[index]];
-    edit({ items });
-  }
-  function history(back: boolean) {
-    const source = back ? undo : redo;
-    if (!source.length) return;
-    const previous = source[source.length - 1];
-    if (back) {
-      setUndo(source.slice(0, -1));
-      setRedo((a) => [...a, current]);
-    } else {
-      setRedo(source.slice(0, -1));
-      setUndo((a) => [...a, current]);
+  // Active Business & Multi-business resolution
+  const businesses = useMemo(() => {
+    if (data.businesses && data.businesses.length > 0) return data.businesses;
+    const defaultBiz: BusinessRecord = {
+      id: "biz-default",
+      name: data.brand?.name || "Main Supermarket",
+      profile: brandToBusinessProfile(data.brand || defaultBrand, "biz-default"),
+      products: data.products || [],
+      flyers: (data.campaigns || []).map((c) => migrateCampaignToFlyer(c, "biz-default")),
+      customTemplates: data.customTemplates || [],
+    };
+    return [defaultBiz];
+  }, [data.businesses, data.brand, data.products, data.campaigns, data.customTemplates]);
+
+  const activeBusinessId = data.activeBusinessId || businesses[0]?.id || "biz-default";
+  const activeBusiness = businesses.find((b) => b.id === activeBusinessId) || businesses[0];
+
+  // Active Flyer Document resolution
+  const [selectedFlyerId, setSelectedFlyerId] = useState<string | null>(null);
+
+  const flyers = useMemo(() => {
+    if (activeBusiness.flyers && activeBusiness.flyers.length > 0) {
+      return activeBusiness.flyers;
     }
-    edit({ ...previous, id: current.id }, false);
-  }
-  function duplicate(c: Campaign) {
-    const next = {
-      ...structuredClone(c),
-      id: uid(),
-      name: (c.name + " · copy").slice(0, 80),
-      status: "draft" as const,
+    // Backward compatibility with campaigns
+    if (data.campaigns && data.campaigns.length > 0) {
+      return data.campaigns.map((c) => migrateCampaignToFlyer(c, activeBusiness.id));
+    }
+    return [newFlyer(activeBusiness.id, activeBusiness.profile ? defaultBrand : defaultBrand, sampleProducts, true)];
+  }, [activeBusiness, data.campaigns]);
+
+  const currentFlyer = useMemo(() => {
+    return flyers.find((f) => f.id === selectedFlyerId) || flyers[0];
+  }, [flyers, selectedFlyerId]);
+
+  // Active Page & Selection state
+  const [activePageIndex, setActivePageIndex] = useState(0);
+  const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+
+  // Navigation tabs
+  const [activeTab, setActiveTab] = useState<
+    "editor" | "pages" | "sections" | "products" | "templates" | "branding" | "admin"
+  >("editor");
+
+  // Undo / Redo history
+  const [undoStack, setUndoStack] = useState<FlyerDocument[]>([]);
+  const [redoStack, setRedoStack] = useState<FlyerDocument[]>([]);
+
+  // Modals state
+  const [productModal, setProductModal] = useState<Product | null>(null);
+  const [productPickerCellId, setProductPickerCellId] = useState<string | null>(null);
+  const [bulkFillOpen, setBulkFillOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [downloadInfo, setDownloadInfo] = useState<{ url: string; name: string } | null>(null);
+  const [csvModalOpen, setCsvModalOpen] = useState(false);
+  const [csvRows, setCsvRows] = useState<Product[]>([]);
+
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // Ensure active page index is within bounds
+  const clampedPageIndex = Math.max(
+    0,
+    Math.min(activePageIndex, (currentFlyer?.pages?.length || 1) - 1),
+  );
+  const activePage = currentFlyer?.pages?.[clampedPageIndex] || currentFlyer?.pages?.[0];
+
+  // Document Mutation helper
+  function updateFlyer(updatedFlyer: FlyerDocument, pushHistory = true) {
+    if (pushHistory && currentFlyer) {
+      setUndoStack((prev) => [...prev.slice(-25), structuredClone(currentFlyer)]);
+      setRedoStack([]);
+    }
+
+    const nextFlyer = {
+      ...updatedFlyer,
       updated: new Date().toISOString(),
     };
-    update((d) => ({ ...d, campaigns: [next, ...d.campaigns] }));
-    openCampaign(next);
-    toast.success("Campaign copied. Update the dates for your next offer.");
-  }
-  function saveProduct(e: React.FormEvent) {
-    e.preventDefault();
-    if (!product) return;
-    const valid = productSchema.safeParse(product);
-    if (!valid.success) {
-      toast.error(valid.error.issues[0].message);
-      return;
-    }
-    update((d) => ({
-      ...d,
-      products: d.products.some((p) => p.id === product.id)
-        ? d.products.map((p) => (p.id === product.id ? product : p))
-        : [product, ...d.products],
-    }));
-    setModal(null);
-    toast.success("Product saved to your library");
-  }
-  function addProduct() {
-    setProduct({
-      id: uid(),
-      name: "",
-      pack: "",
-      price: 0,
-      category: "Other",
-      image: "",
-      sku: "",
-    });
-    setModal("product");
-  }
-  async function uploadProduct(files: FileList | null) {
-    if (!files?.length) return;
-    setBusy(true);
-    let count = 0;
-    try {
-      for (const file of Array.from(files)) {
-        const image = await upload(file);
-        const p: Product = {
-          id: uid(),
-          name: file.name
-            .replace(/\.[^.]+$/, "")
-            .replace(/[_-]/g, " ")
-            .slice(0, 100),
-          pack: "",
-          price: 0,
-          category: "Other",
-          image,
-          sku: "",
+
+    update((prev) => {
+      const bizList = prev.businesses && prev.businesses.length > 0 ? [...prev.businesses] : [...businesses];
+      const bizIndex = bizList.findIndex((b) => b.id === activeBusiness.id);
+      if (bizIndex >= 0) {
+        const existingFlyers = bizList[bizIndex].flyers || [];
+        const fIdx = existingFlyers.findIndex((f) => f.id === nextFlyer.id);
+        const updatedFlyers =
+          fIdx >= 0
+            ? existingFlyers.map((f, i) => (i === fIdx ? nextFlyer : f))
+            : [nextFlyer, ...existingFlyers];
+
+        bizList[bizIndex] = {
+          ...bizList[bizIndex],
+          flyers: updatedFlyers,
         };
-        update((d) => ({ ...d, products: [p, ...d.products] }));
-        count++;
       }
-      toast.success(
-        `${count} products uploaded. Add pack sizes and prices in the library.`,
+
+      // Keep legacy campaigns in sync
+      const legacyCampaign = flyerToCampaign(nextFlyer);
+      const updatedCampaigns = prev.campaigns.map((c) =>
+        c.id === legacyCampaign.id ? legacyCampaign : c,
       );
-    } catch (e) {
-      toast.error(`${count} uploaded. ${(e as Error).message}`);
-    } finally {
-      setBusy(false);
-      if (bulkInput.current) bulkInput.current.value = "";
-    }
-  }
-  async function readCsv(file?: File) {
-    if (!file) return;
-    try {
-      const rows = parseCsv(await file.text());
-      if (data.products.length + rows.length > 1500)
-        throw new Error("Maximum 1,500 products per workspace.");
-      setCsvRows(rows);
-      setModal("csv");
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-    if (csvInput.current) csvInput.current.value = "";
-  }
-  async function doExport(format: "png" | "pdf" | "svg") {
-    setExporting(true);
-    setDownload(null);
-    setExportError("");
-    try {
-      const file = await exportFlyer(current, template, format, actualPage);
-      // The file already exists in this browser, so offer it immediately and
-      // only then try to keep a shareable copy in the workspace. Hosting body
-      // limits can reject a large export; the download still works.
-      setDownload({ url: URL.createObjectURL(file.blob), name: file.name });
-      toast.success("Your flyer is ready to download");
-      try {
-        const form = new FormData();
-        form.append(
-          "file",
-          new File([file.blob], file.name, { type: file.blob.type }),
-        );
-        const r = await fetch("/api/exports", { method: "POST", body: form });
-        if (!r.ok) return;
-        const result = (await r.json()) as { url: string };
-        setDownload({ url: result.url, name: file.name });
-      } catch {
-        // Keep the local download; the shareable copy is a bonus.
+      if (!updatedCampaigns.some((c) => c.id === legacyCampaign.id)) {
+        updatedCampaigns.unshift(legacyCampaign);
       }
-    } catch (e) {
-      setExportError((e as Error).message);
-      toast.error((e as Error).message);
+
+      return {
+        ...prev,
+        businesses: bizList,
+        campaigns: updatedCampaigns,
+      };
+    });
+  }
+
+  function updateActivePage(patch: Partial<FlyerPage> | ((p: FlyerPage) => FlyerPage)) {
+    if (!currentFlyer || !activePage) return;
+    const nextPages = currentFlyer.pages.map((p, i) => {
+      if (i === clampedPageIndex) {
+        return typeof patch === "function" ? patch(p) : { ...p, ...patch };
+      }
+      return p;
+    });
+    updateFlyer({ ...currentFlyer, pages: nextPages });
+  }
+
+  // Undo / Redo handlers
+  function handleUndo() {
+    if (undoStack.length === 0) return;
+    const previous = undoStack[undoStack.length - 1];
+    setUndoStack((prev) => prev.slice(0, -1));
+    setRedoStack((prev) => [...prev, structuredClone(currentFlyer)]);
+    updateFlyer(previous, false);
+  }
+
+  function handleRedo() {
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    setRedoStack((prev) => prev.slice(0, -1));
+    setUndoStack((prev) => [...prev, structuredClone(currentFlyer)]);
+    updateFlyer(next, false);
+  }
+
+  // Business switching & creation
+  function handleSwitchBusiness(bizId: string) {
+    update((prev) => ({
+      ...prev,
+      activeBusinessId: bizId,
+    }));
+    setSelectedFlyerId(null);
+    setActivePageIndex(0);
+    setSelectedCellId(null);
+    setSelectedSectionId(null);
+    toast.success("Switched business context");
+  }
+
+  function handleCreateBusiness(name: string) {
+    const newBizId = "biz-" + uid().slice(0, 8);
+    const newBiz: BusinessRecord = {
+      id: newBizId,
+      name,
+      profile: {
+        ...brandToBusinessProfile(defaultBrand, newBizId),
+        name,
+      },
+      products: [...sampleProducts],
+      flyers: [newFlyer(newBizId, defaultBrand, sampleProducts)],
+      customTemplates: [],
+    };
+
+    update((prev) => ({
+      ...prev,
+      activeBusinessId: newBizId,
+      businesses: [...(prev.businesses || businesses), newBiz],
+    }));
+
+    setSelectedFlyerId(newBiz.flyers[0].id);
+    setActivePageIndex(0);
+    toast.success(`Business "${name}" created!`);
+  }
+
+  function handleUpdateBusinessProfile(patch: Partial<BusinessProfile>) {
+    const nextProfile = {
+      ...(activeBusiness.profile || brandToBusinessProfile(defaultBrand, activeBusiness.id)),
+      ...patch,
+    };
+
+    update((prev) => {
+      const nextBizList = (prev.businesses || businesses).map((b) =>
+        b.id === activeBusiness.id
+          ? { ...b, name: nextProfile.name, profile: nextProfile }
+          : b,
+      );
+      return {
+        ...prev,
+        brand: {
+          ...prev.brand,
+          name: nextProfile.name,
+          color: nextProfile.brandColors?.primary || prev.brand.color,
+          logo: nextProfile.logo,
+        },
+        businesses: nextBizList,
+      };
+    });
+    toast.success("Business profile saved");
+  }
+
+  // Export handling
+  async function handleExport(format: "pdf" | "png" | "svg") {
+    setExporting(true);
+    setDownloadInfo(null);
+    try {
+      const legacyCampaign = flyerToCampaign(currentFlyer);
+      const t = templates.find((x) => x.id === activePage?.templateId) || templates[0];
+      const result = await exportFlyer(legacyCampaign, t, format, clampedPageIndex);
+
+      setDownloadInfo({
+        url: URL.createObjectURL(result.blob),
+        name: result.name,
+      });
+      toast.success(`Flyer exported as ${format.toUpperCase()}`);
+    } catch (err) {
+      toast.error((err as Error).message);
     } finally {
       setExporting(false);
     }
   }
-  function showcase() {
-    const c = newCampaign(wearMartBrand, sampleProducts, true);
-    c.name = "Wear Mart · Client showcase";
-    c.headline = "Items available in all 3 branches";
-    c.template = wearMartTemplates[0].id;
-    c.templateSnapshot = { ...wearMartTemplates[0] };
-    update((d) => ({
-      ...d,
-      campaigns: [c, ...d.campaigns],
-      products: [
-        ...d.products,
-        ...sampleProducts.filter((p) => !d.products.some((x) => x.id === p.id)),
-      ],
-    }));
-    openCampaign(c);
-    setTab("design");
-    toast.success(
-      "Showcase loaded with sample products. Add actual products and branch locations before sharing.",
-    );
-  }
-  function chooseSlot(target: EventTarget | null) {
-    const el = target instanceof Element ? target.closest("[data-slot]") : null;
-    if (el && canEdit) setSlot(Number(el.getAttribute("data-slot")));
-  }
-  function nextSlot() {
-    const used = new Set(current.items.map((_, i) => slotNumber(current, i)));
-    for (let i = 0; i < 120; i++) if (!used.has(i)) return i;
-    return 119;
-  }
-  const pageOffset = actualPage * template.capacity;
-  const layoutEntries: LayoutEntry[] = pageRects(
-    current,
-    template,
-    actualPage,
-  ).map((box, i) => ({
-    slot: pageOffset + i,
-    box,
-    offer: current.items.find(
-      (_, j) => slotNumber(current, j) === pageOffset + i,
-    ),
-  }));
-  function setBoxAt(slot: number, box: Box | null) {
-    const index = current.items.findIndex(
-      (_, i) => slotNumber(current, i) === slot,
-    );
-    if (index < 0) return;
-    changeItem(index, { box: box ? fitBox(box) : undefined });
-  }
-  function resetAllBoxes() {
-    if (!current.items.some((p) => p.box)) {
-      toast("Every card is already on the template grid");
-      return;
+
+  // Canvas interaction listener
+  function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
+    const target = e.target as HTMLElement;
+    const cellTarget = target.closest("[data-cell-target]") || target.closest("[data-cell-id]");
+    if (cellTarget) {
+      const cellId = cellTarget.getAttribute("data-cell-target") || cellTarget.getAttribute("data-cell-id");
+      if (cellId) {
+        setSelectedCellId(cellId);
+        setSelectedSectionId(null);
+        return;
+      }
     }
-    edit({
-      items: current.items.map((p) => {
-        const copy: Offer = { ...p };
-        delete copy.box;
-        return copy;
-      }),
-    });
-    toast.success("All cards returned to the template grid");
-  }
-  function backup() {
-    downloadBlob(
-      new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
-      "flyerly-workspace-backup.json",
-    );
-  }
-  async function signOut() {
-    try {
-      await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "logout" }),
-      });
-    } finally {
-      window.location.reload();
+
+    const secTarget = target.closest("[data-section-id]");
+    if (secTarget) {
+      const secId = secTarget.getAttribute("data-section-id");
+      if (secId) {
+        setSelectedSectionId(secId);
+        setSelectedCellId(null);
+        return;
+      }
     }
+
+    // Clicked outside
+    setSelectedCellId(null);
+    setSelectedSectionId(null);
   }
-  useEffect(() => {
-    const context = (
-      document as unknown as {
-        modelContext?: {
-          registerTool: (tool: unknown, options: unknown) => Promise<void>;
+
+  // Find currently active grid and selected cell
+  const activeGrid = useMemo(() => {
+    if (!activePage) return null;
+    const secWithGrid = activePage.sections.find((s) => s.type === "grid" && s.grid);
+    return secWithGrid?.grid || null;
+  }, [activePage]);
+
+  const selectedCell = useMemo(() => {
+    if (!activeGrid || !selectedCellId) return null;
+    return activeGrid.cells.find((c) => c.id === selectedCellId) || null;
+  }, [activeGrid, selectedCellId]);
+
+  const selectedSection = useMemo(() => {
+    if (!activePage || !selectedSectionId) return null;
+    return activePage.sections.find((s) => s.id === selectedSectionId) || null;
+  }, [activePage, selectedSectionId]);
+
+  // Empty cell count in active grid
+  const emptyCellCount = useMemo(() => {
+    if (!activeGrid) return 0;
+    return activeGrid.cells.filter((c) => !c.hidden && c.contentType === "empty").length;
+  }, [activeGrid]);
+
+  // Bulk fill product assignment
+  function handleBulkAssign(selectedOffers: Offer[]) {
+    if (!activeGrid || selectedOffers.length === 0) return;
+    let offerIdx = 0;
+    const nextCells = activeGrid.cells.map((c) => {
+      if (!c.hidden && c.contentType === "empty" && offerIdx < selectedOffers.length) {
+        const offer = selectedOffers[offerIdx++];
+        return {
+          ...c,
+          contentType: "product" as const,
+          product: offer,
         };
       }
-    ).modelContext;
-    if (!context?.registerTool) return;
-    const lifecycle = new AbortController();
-    Promise.resolve(
-      context.registerTool(
-        {
-          name: "read_current_flyer",
-          description:
-            "Read current flyer products, dates and prices without modifying them.",
-          inputSchema: {
-            type: "object",
-            properties: {},
-            additionalProperties: false,
-          },
-          annotations: { readOnlyHint: true, untrustedContentHint: true },
-          execute: (input: unknown) => {
-            if (
-              !input ||
-              typeof input !== "object" ||
-              Object.keys(input).length
-            )
-              throw new Error("Expected an empty object");
-            return structuredClone(campaignRef.current);
-          },
-        },
-        { signal: lifecycle.signal },
+      return c;
+    });
+
+    const nextGrid = { ...activeGrid, cells: nextCells };
+    updateActivePage((page) => ({
+      ...page,
+      sections: page.sections.map((sec) =>
+        sec.type === "grid" && sec.grid?.id === nextGrid.id ? { ...sec, grid: nextGrid } : sec,
       ),
-    ).catch(() => {});
-    return () => lifecycle.abort();
-  }, []);
-  const shownProducts = data.products.filter(
-    (p) =>
-      (filter === "All" || p.category === filter) &&
-      [p.name, p.sku, p.category]
-        .join(" ")
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
-  const title =
-    view === "AI credits"
-      ? "Better product photos. On demand."
-      : view === "Business admin"
-        ? "A home for every business."
-        : view === "Product library"
-          ? "Your products. Always on hand."
-          : view === "Templates"
-            ? "A fresh look for every offer."
-            : view === "Store branding"
-              ? "Make every flyer feel like you."
-              : view === "Saved campaigns"
-                ? "Your weeks, neatly saved."
-                : "Your next great offer starts here.";
+    }));
+    toast.success(`Assigned ${offerIdx} products into empty grid cells!`);
+  }
+
+  // Single cell product assignment
+  function handleCellProductAssign(offer: Offer) {
+    if (!activeGrid || !productPickerCellId) return;
+    const nextCells = activeGrid.cells.map((c) =>
+      c.id === productPickerCellId
+        ? {
+            ...c,
+            contentType: "product" as const,
+            product: offer,
+          }
+        : c,
+    );
+
+    const nextGrid = { ...activeGrid, cells: nextCells };
+    updateActivePage((page) => ({
+      ...page,
+      sections: page.sections.map((sec) =>
+        sec.type === "grid" && sec.grid?.id === nextGrid.id ? { ...sec, grid: nextGrid } : sec,
+      ),
+    }));
+    setSelectedCellId(productPickerCellId);
+    setProductPickerCellId(null);
+    toast.success(`Assigned "${offer.name}" to cell`);
+  }
+
+  // SVG Render string
+  const pageSvgString = useMemo(() => {
+    if (!activePage) return "";
+    return renderPageSvg(activePage, activeBusiness.profile || defaultBrand, {
+      interactive: true,
+      selectedCellId,
+      selectedSectionId,
+    });
+  }, [activePage, activeBusiness.profile, selectedCellId, selectedSectionId]);
+
   return (
-    <SidebarProvider
-      style={{ "--sidebar-width": "218px" } as React.CSSProperties}
-    >
-      <Toaster position="bottom-right" />
-      <Sidebar className="app-sidebar">
-        <SidebarHeader>
-          <div className="wordmark">
-            <span>
-              <Leaf size={23} />
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 font-sans text-slate-800">
+      {/* Top Navbar */}
+      <header className="h-14 border-b border-slate-200 bg-white px-4 flex items-center justify-between shrink-0 z-20">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5 font-black text-lg text-emerald-800">
+            <span className="w-7 h-7 rounded-lg bg-emerald-700 text-white flex items-center justify-center">
+              <Leaf size={16} />
             </span>
-            flyerly<span className="brand-dot">.</span>
+            <span>flyerly<span className="text-emerald-500">.</span></span>
           </div>
-        </SidebarHeader>
-        <SidebarContent>
-          <div className="workspace-label">YOUR WORKSPACE</div>
-          <SidebarMenu>
-            {[
-              { Icon: Files, label: "Campaign studio" },
-              { Icon: FolderOpen, label: "Saved campaigns" },
-              { Icon: Package, label: "Product library" },
-              { Icon: LayoutTemplate, label: "Templates" },
-              { Icon: Store, label: "Store branding" },
-              { Icon: ImagePlus, label: "AI credits" },
-              ...(business.info?.isAdmin
-                ? [{ Icon: Store, label: "Business admin" }]
-                : []),
-            ].map(({ Icon, label }) => (
-              <SidebarMenuItem key={label}>
-                <SidebarMenuButton
-                  isActive={view === label}
-                  onClick={() => navigate(label)}
-                >
-                  <Icon size={18} />
-                  <span>{label}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-          <div className="sidebar-tip">
-            <div>
-              <Leaf size={18} />
-              <b>A head start, every week.</b>
-            </div>
-            <p>Duplicate a campaign, update your offers, and you’re ready.</p>
+
+          <div className="h-5 w-px bg-slate-200" />
+
+          {/* Multi-Business Switcher */}
+          <BusinessSwitcher
+            businesses={businesses}
+            activeBusinessId={activeBusiness.id}
+            onSwitchBusiness={handleSwitchBusiness}
+            onCreateBusiness={handleCreateBusiness}
+            onOpenSettings={() => setActiveTab("branding")}
+          />
+
+          <div className="h-5 w-px bg-slate-200" />
+
+          {/* Flyer Document Name */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={currentFlyer.name}
+              onChange={(e) => updateFlyer({ ...currentFlyer, name: e.target.value })}
+              className="text-xs font-bold text-slate-800 bg-transparent hover:bg-slate-100 px-2 py-1 rounded border border-transparent hover:border-slate-200 outline-none max-w-[200px]"
+            />
+            <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+              {currentFlyer.pages.length} page{currentFlyer.pages.length !== 1 ? "s" : ""}
+            </span>
           </div>
-        </SidebarContent>
-        <SidebarFooter>
-          <div className="store-profile">
-            <span>{data.brand.name.slice(0, 2)}</span>
-            <div>
-              <b>{data.brand.name}</b>
-              <small title={account.email}>{account.email}</small>
-            </div>
+        </div>
+
+        {/* Center: Autosave Status & Undo/Redo */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
             <button
-              className="bare sign-out"
-              title="Sign out"
-              aria-label="Sign out"
-              onClick={() => void signOut()}
+              type="button"
+              disabled={undoStack.length === 0}
+              onClick={handleUndo}
+              className="p-1.5 text-slate-500 hover:text-slate-900 rounded disabled:opacity-30"
+              title="Undo (Ctrl+Z)"
             >
-              <LogOut size={15} />
+              <Undo2 size={15} />
+            </button>
+            <button
+              type="button"
+              disabled={redoStack.length === 0}
+              onClick={handleRedo}
+              className="p-1.5 text-slate-500 hover:text-slate-900 rounded disabled:opacity-30"
+              title="Redo (Ctrl+Y)"
+            >
+              <Redo2 size={15} />
             </button>
           </div>
-        </SidebarFooter>
-      </Sidebar>
-      <main className="app-main">
-        <header className="topbar">
-          <div>
-            <SidebarTrigger />
-            <span>Workspace</span>
-            <span className="slash">/</span>
-            <b>{view}</b>
-          </div>
-          <div className="save-status">
-            {w.saving ? (
+
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium px-2 py-1 bg-slate-50 rounded-md border border-slate-200">
+            {saving ? (
               <>
-                <Loader2 size={14} className="spin" />
-                Saving…
+                <Loader2 size={12} className="animate-spin text-emerald-600" />
+                <span>Saving...</span>
               </>
-            ) : w.error ? (
+            ) : syncError ? (
               <>
-                <AlertCircle size={15} />
-                Not saved
-              </>
-            ) : w.loaded ? (
-              <>
-                <Check size={15} />
-                All changes saved
+                <AlertCircle size={12} className="text-amber-600" />
+                <span className="text-amber-700">Unsaved changes</span>
               </>
             ) : (
-              "Opening workspace…"
-            )}
-            <span className="avatar">{data.brand.name[0]}</span>
-          </div>
-        </header>
-        {business.error && w.loaded && (
-          <div className="notice error">
-            <span>Business settings could not be loaded.</span>
-            <button className="button" onClick={() => business.refresh()}>
-              Retry
-            </button>
-          </div>
-        )}
-        {w.error && (
-          <div className="notice error" role="alert">
-            <span>{w.error}</span>
-            <button
-              className="button"
-              onClick={() => (w.loaded ? w.save() : w.reload())}
-            >
-              Retry
-            </button>
-            <a
-              className="button"
-              href="/api/health"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Connection check
-            </a>
-            {w.loaded && (
-              <button className="button" onClick={backup}>
-                Download backup
-              </button>
+              <>
+                <Check size={12} className="text-emerald-600" />
+                <span>Saved</span>
+              </>
             )}
           </div>
-        )}
-        <div className="page-heading">
-          <div>
-            <div className="eyebrow">
-              {view === "Campaign studio"
-                ? "MAKE THIS WEEK A GOOD ONE"
-                : "YOUR STORE, IN GOOD COMPANY"}
-            </div>
-            <h1>{title}</h1>
-            <p>
-              {view === "Product library"
-                ? `${data.products.length} reusable products · Upload once. Use every week.`
-                : view === "Templates"
-                  ? "Pick a layout. Your products and prices come with you."
-                  : view === "Saved campaigns"
-                    ? "Reopen a past campaign or give it a new week."
-                    : view === "Store branding"
-                      ? "Saved branding is applied to new campaigns."
-                      : "A little less designing. A lot more selling."}
-            </p>
-          </div>
-          <button
-            className="button primary"
-            disabled={!canEdit}
-            onClick={() => startCampaign()}
-          >
-            <Plus size={18} />
-            New campaign
-          </button>
         </div>
-        {view === "Campaign studio" && (
-          <>
-            <div className="studio-shell">
-              <div className="studio-top">
-                <div>
-                  <span className="draft-chip">
-                    {isDemo ? "SAMPLE" : current.status.toUpperCase()}
+
+        {/* Right Actions: Export & Account */}
+        <div className="flex items-center gap-3">
+          {/* Export Buttons */}
+          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => handleExport("pdf")}
+              className="px-3 py-1.5 text-xs font-bold rounded-md bg-emerald-700 text-white hover:bg-emerald-800 flex items-center gap-1.5 transition cursor-pointer"
+            >
+              {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+              Export PDF
+            </button>
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => handleExport("png")}
+              className="px-2.5 py-1.5 text-xs font-semibold rounded-md text-slate-700 hover:bg-white transition"
+            >
+              PNG
+            </button>
+          </div>
+
+          {/* Admin Panel Link */}
+          {businessContext.info?.isAdmin && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("admin")}
+              className={`p-2 rounded-lg border text-xs flex items-center gap-1 font-semibold ${
+                activeTab === "admin"
+                  ? "bg-purple-50 text-purple-900 border-purple-300"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <Shield size={14} className="text-purple-600" />
+              <span>Admin</span>
+            </button>
+          )}
+
+          {/* Account Details & Sign Out */}
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200">
+            <span className="max-w-[120px] truncate text-[11px]" title={account.email}>
+              {account.email}
+            </span>
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch("/api/auth", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "logout" }),
+                });
+                window.location.reload();
+              }}
+              className="p-1 text-slate-400 hover:text-rose-600 rounded transition"
+              title="Sign out"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Crash Recovery Notification Banner */}
+      {recoveredDraft && (
+        <div className="bg-amber-500 text-white px-4 py-2 text-xs flex items-center justify-between shrink-0 font-medium shadow-sm">
+          <span>
+            <b>Unsaved recovery draft found:</b> We recovered flyer edits from your previous session.
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={restoreDraft}
+              className="px-2.5 py-1 bg-white text-amber-900 font-bold rounded shadow-sm hover:bg-amber-50"
+            >
+              Restore Edits
+            </button>
+            <button
+              type="button"
+              onClick={discardDraft}
+              className="px-2.5 py-1 bg-amber-600 text-white font-medium rounded hover:bg-amber-700"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Body (Canva Style: Left Navigation Tabs, Center Canvas, Right Contextual Inspector) */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Side Icon Strip */}
+        <aside className="w-16 bg-white border-r border-slate-200 flex flex-col items-center py-3 gap-3 shrink-0 z-10">
+          <button
+            type="button"
+            onClick={() => setActiveTab("editor")}
+            className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition ${
+              activeTab === "editor"
+                ? "bg-emerald-50 text-emerald-800 border border-emerald-300"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            }`}
+          >
+            <LayoutTemplate size={18} />
+            <span>Design</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("pages")}
+            className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition ${
+              activeTab === "pages"
+                ? "bg-emerald-50 text-emerald-800 border border-emerald-300"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            }`}
+          >
+            <Files size={18} />
+            <span>Pages</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("sections")}
+            className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition ${
+              activeTab === "sections"
+                ? "bg-emerald-50 text-emerald-800 border border-emerald-300"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            }`}
+          >
+            <Layers size={18} />
+            <span>Sections</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("products")}
+            className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition ${
+              activeTab === "products"
+                ? "bg-emerald-50 text-emerald-800 border border-emerald-300"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            }`}
+          >
+            <Package size={18} />
+            <span>Items</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("branding")}
+            className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition ${
+              activeTab === "branding"
+                ? "bg-emerald-50 text-emerald-800 border border-emerald-300"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            }`}
+          >
+            <Store size={18} />
+            <span>Brand</span>
+          </button>
+        </aside>
+
+        {/* Left Auxiliary Panel (Based on active tab) */}
+        {activeTab !== "editor" && (
+          <aside className="w-80 bg-white border-r border-slate-200 flex flex-col p-4 overflow-y-auto shrink-0 animate-in slide-in-from-left-4 duration-150">
+            {activeTab === "pages" && (
+              <PageManager
+                flyer={currentFlyer}
+                activePageIndex={clampedPageIndex}
+                onSelectPage={(idx) => {
+                  setActivePageIndex(idx);
+                  setSelectedCellId(null);
+                  setSelectedSectionId(null);
+                }}
+                onUpdateFlyer={updateFlyer}
+              />
+            )}
+
+            {activeTab === "sections" && activePage && (
+              <SectionManager
+                page={activePage}
+                onUpdatePage={(nextP) => updateActivePage(nextP)}
+                selectedSectionId={selectedSectionId}
+                onSelectSection={(id) => {
+                  setSelectedSectionId(id);
+                  setSelectedCellId(null);
+                }}
+              />
+            )}
+
+            {activeTab === "products" && (
+              <div className="flex flex-col gap-4 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                    Product Library ({activeBusiness.products?.length || 0})
                   </span>
-                  <h2>{current.name}</h2>
-                </div>
-                <div className="toolbar">
                   <button
-                    className="icon-button"
-                    title="Undo"
-                    aria-label="Undo"
-                    disabled={!undo.length}
-                    onClick={() => history(true)}
+                    type="button"
+                    onClick={() =>
+                      setProductModal({
+                        id: uid(),
+                        name: "",
+                        arabicName: "",
+                        pack: "1 kg",
+                        category: "Grocery",
+                        price: 9.95,
+                        image: "",
+                        sku: "",
+                      })
+                    }
+                    className="text-xs bg-emerald-700 text-white font-bold px-2 py-1 rounded flex items-center gap-1"
                   >
-                    <Undo2 size={16} />
-                  </button>
-                  <button
-                    className="icon-button"
-                    title="Redo"
-                    aria-label="Redo"
-                    disabled={!redo.length}
-                    onClick={() => history(false)}
-                  >
-                    <Redo2 size={16} />
-                  </button>
-                  <button className="button" onClick={() => setModal("export")}>
-                    <Download size={16} />
-                    Export flyer
+                    <Plus size={13} /> Add
                   </button>
                 </div>
-              </div>
-              <div className="studio-grid">
-                <section className="control-panel">
-                  <Tabs value={tab} onValueChange={setTab}>
-                    <TabsList>
-                      <TabsTrigger value="products">Products</TabsTrigger>
-                      <TabsTrigger value="design">Design</TabsTrigger>
-                      <TabsTrigger value="details">Details</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="products">
-                      <div className="panel-heading">
-                        <div>
-                          <h3>This week’s picks</h3>
-                          <p>{current.items.length} products in your flyer</p>
-                        </div>
-                        <button
-                          className="icon-button"
-                          aria-label="Add products to flyer"
-                          disabled={!canEdit}
-                          onClick={() => {
-                            setSearch("");
-                            setModal("picker");
-                          }}
-                        >
-                          <Plus size={18} />
-                        </button>
-                      </div>
-                      {(isDemo || current.name.includes("Client showcase")) && (
-                        <div className="sample-notice">
-                          Sample products and prices. Edit to make this campaign
-                          yours.
-                        </div>
-                      )}
-                      {current.items.length === 0 && (
-                        <div className="empty compact">
-                          <Package />
-                          <h3>Your offers go here</h3>
-                          <p>
-                            Add products from your library to start your flyer.
-                          </p>
-                          <button
-                            className="button primary"
-                            disabled={!canEdit}
-                            onClick={() => setModal("picker")}
-                          >
-                            Choose products
-                          </button>
-                        </div>
-                      )}
-                      <div className="offer-list">
-                        {current.items.map((p, i) => (
-                          <div className="offer-editor" key={i}>
-                            <div className="offer-row">
-                              <Thumb product={p} />
-                              <div>
-                                <b>{p.name}</b>
-                                <small>{p.pack || "No pack size"}</small>
-                              </div>
-                              <button
-                                className="bare"
-                                aria-label={`Remove ${p.name}`}
-                                disabled={!canEdit}
-                                onClick={() =>
-                                  edit({
-                                    items: current.items
-                                      .map((p, n) => ({
-                                        ...p,
-                                        slot: slotNumber(current, n),
-                                      }))
-                                      .filter((_, n) => n !== i),
-                                  })
-                                }
-                              >
-                                <X size={15} />
-                              </button>
-                            </div>
-                            <div className="price-row">
-                              <Field label="Regular">
-                                <input
-                                  aria-label={`Regular price for ${p.name}`}
-                                  type="number"
-                                  min="0"
-                                  max="999999"
-                                  step="0.01"
-                                  value={p.price}
-                                  disabled={!canEdit}
-                                  onChange={(e) =>
-                                    changeItem(i, {
-                                      price: Number(e.target.value),
-                                    })
-                                  }
-                                />
-                              </Field>
-                              <Field
-                                label={`Offer · ${current.brand.currency}`}
-                              >
-                                <input
-                                  className="offer-input"
-                                  aria-label={`Offer price for ${p.name}`}
-                                  type="number"
-                                  min="0"
-                                  max="999999"
-                                  step="0.01"
-                                  value={p.offer}
-                                  disabled={!canEdit}
-                                  onChange={(e) =>
-                                    changeItem(i, {
-                                      offer: Number(e.target.value),
-                                    })
-                                  }
-                                />
-                              </Field>
-                              <div className="reorder">
-                                <button
-                                  className="bare"
-                                  aria-label={`Move ${p.name} up`}
-                                  disabled={i === 0 || !canEdit}
-                                  onClick={() => reorder(i, -1)}
-                                >
-                                  <ArrowUp size={14} />
-                                </button>
-                                <button
-                                  className="bare"
-                                  aria-label={`Move ${p.name} down`}
-                                  disabled={
-                                    i === current.items.length - 1 || !canEdit
-                                  }
-                                  onClick={() => reorder(i, 1)}
-                                >
-                                  <ArrowDown size={14} />
-                                </button>
-                              </div>
-                            </div>
-                            <label className="check-label">
-                              <input
-                                type="checkbox"
-                                checked={p.showOldPrice ?? p.price > p.offer}
-                                onChange={(e) =>
-                                  changeItem(i, {
-                                    showOldPrice: e.target.checked,
-                                  })
-                                }
-                              />
-                              Show old price
-                            </label>
-                            <input
-                              className="badge-input"
-                              placeholder="Offer label, e.g. Best value"
-                              aria-label={`Badge for ${p.name}`}
-                              maxLength={30}
-                              value={p.badge}
-                              disabled={!canEdit}
-                              onChange={(e) =>
-                                changeItem(i, { badge: e.target.value })
-                              }
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <button
-                        className="button add-more"
-                        disabled={!canEdit}
-                        onClick={() => {
-                          setSearch("");
-                          setModal("picker");
-                        }}
-                      >
-                        <Plus size={15} />
-                        Add products
-                      </button>
-                    </TabsContent>
-                    <TabsContent value="design">
-                      <div className="panel-heading">
-                        <div>
-                          <h3>Find your look</h3>
-                          <p>Switch styles without starting over</p>
-                        </div>
-                      </div>
-                      <div className="template-picker">
-                        {allTemplates.map((t) => (
-                          <button
-                            key={t.id}
-                            className={
-                              "template-choice " +
-                              (current.template === t.id ? "chosen" : "")
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBulkFillOpen(true)}
+                    className="flex-1 py-1.5 text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg hover:bg-emerald-100 flex items-center justify-center gap-1"
+                  >
+                    <Sparkles size={13} /> Bulk Fill Grid
+                  </button>
+                  <label className="py-1.5 px-3 text-xs font-semibold bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer flex items-center gap-1">
+                    <Upload size={13} /> CSV
+                    <input
+                      ref={csvInputRef}
+                      type="file"
+                      accept=".csv"
+                      hidden
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const text = await file.text();
+                          // Simple parse
+                          const lines = text.split("\n").filter((l) => l.trim());
+                          const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+                          const items: Product[] = [];
+                          for (let i = 1; i < lines.length; i++) {
+                            const cols = lines[i].split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+                            if (cols.length >= 2) {
+                              items.push({
+                                id: uid(),
+                                name: cols[headers.indexOf("name") >= 0 ? headers.indexOf("name") : 0] || "Item",
+                                arabicName: cols[headers.indexOf("arabic") >= 0 ? headers.indexOf("arabic") : 1] || "",
+                                pack: "1 unit",
+                                category: "General",
+                                price: Number(cols[headers.indexOf("price") >= 0 ? headers.indexOf("price") : 1]) || 9.99,
+                                image: "",
+                                sku: "CSV-" + i,
+                              });
                             }
-                            disabled={!canEdit}
-                            onClick={() => edit({ template: t.id })}
-                          >
-                            {t.artwork || t.style.startsWith("wear-") ? (
-                              <div
-                                className="template-swatch artwork-swatch"
-                                aria-hidden="true"
-                                dangerouslySetInnerHTML={{
-                                  __html: flyerSvg(
-                                    t.style.startsWith("wear-")
-                                      ? {
-                                          ...demo,
-                                          brand: wearMartBrand,
-                                          headline:
-                                            "Items available in all 3 branches",
-                                        }
-                                      : demo,
-                                    t,
-                                  ),
-                                }}
-                              />
-                            ) : (
-                              <div
-                                className="template-swatch"
-                                style={{ background: t.color }}
-                              >
-                                <b style={{ color: t.accent }}>
-                                  Fresh
-                                  <br />
-                                  offers.
-                                </b>
-                                <div
-                                  className="swatch-grid"
-                                  style={{
-                                    gridTemplateColumns: `repeat(${t.columns},1fr)`,
-                                  }}
-                                >
-                                  {Array.from(
-                                    { length: Math.min(t.capacity, 6) },
-                                    (_, i) => (
-                                      <span key={i} />
-                                    ),
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                            <b>{t.name}</b>
-                            <small>{t.capacity} products / page</small>
-                            {current.template === t.id && <Check size={14} />}
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        className="button add-more"
-                        disabled={!canEdit}
-                        onClick={() => {
-                          setNewTemplate({
-                            ...templates[0],
-                            id: uid(),
-                            name: "My market template",
-                            style: "custom",
-                          });
-                          setModal("template");
-                        }}
-                      >
-                        <Plus size={15} />
-                        Create template
-                      </button>
-                      <div className="panel-heading">
-                        <div>
-                          <h3>Card layout</h3>
-                          <p>Place and size each card yourself</p>
-                        </div>
-                      </div>
-                      <div className="layout-actions">
-                        <button
-                          className={
-                            "button small" + (layoutMode ? " active" : "")
                           }
-                          aria-pressed={layoutMode}
-                          disabled={!canEdit}
-                          onClick={() => setLayoutMode((v) => !v)}
-                        >
-                          <Move size={15} />
-                          {layoutMode ? "Done arranging" : "Arrange cards"}
-                        </button>
-                        <button
-                          className="button small"
-                          disabled={!canEdit}
-                          onClick={resetAllBoxes}
-                        >
-                          <LayoutGrid size={15} />
-                          Even grid
-                        </button>
-                      </div>
-                      <p className="help-text">
-                        Cards start on the template grid. Drag one, or pull a
-                        handle to resize it, and the arrangement is saved with
-                        this campaign.
-                      </p>
-                    </TabsContent>
-                    <TabsContent value="details">
-                      <div className="panel-heading">
-                        <div>
-                          <h3>The weekly details</h3>
-                          <p>Dates, headline and store information</p>
-                        </div>
-                      </div>
-                      <div className="form-stack">
-                        <Field label="Campaign name">
-                          <input
-                            maxLength={80}
-                            value={current.name}
-                            disabled={!canEdit}
-                            onChange={(e) => edit({ name: e.target.value })}
-                          />
-                        </Field>
-                        <Field label="Flyer headline">
-                          <textarea
-                            maxLength={90}
-                            rows={3}
-                            value={current.headline}
-                            disabled={!canEdit}
-                            onChange={(e) => edit({ headline: e.target.value })}
-                          />
-                        </Field>
-                        <div className="two-cols">
-                          <Field label="Starts">
-                            <input
-                              type="date"
-                              value={current.start}
-                              disabled={!canEdit}
-                              onChange={(e) =>
-                                e.target.value &&
-                                edit({ start: e.target.value })
-                              }
-                            />
-                          </Field>
-                          <Field label="Ends">
-                            <input
-                              type="date"
-                              value={current.end}
-                              disabled={!canEdit}
-                              onChange={(e) =>
-                                e.target.value && edit({ end: e.target.value })
-                              }
-                            />
-                          </Field>
-                        </div>
-                        <LocationFields
-                          brand={current.brand}
-                          onChange={(b) => edit({ brand: b })}
-                        />
-                        <Field label="Store name on this flyer">
-                          <input
-                            maxLength={60}
-                            value={current.brand.name}
-                            disabled={!canEdit}
-                            onChange={(e) =>
-                              edit({
-                                brand: {
-                                  ...current.brand,
-                                  name: e.target.value,
-                                },
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="Currency">
-                          <input
-                            maxLength={8}
-                            value={current.brand.currency}
-                            disabled={!canEdit}
-                            onChange={(e) =>
-                              edit({
-                                brand: {
-                                  ...current.brand,
-                                  currency: e.target.value,
-                                },
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="Footer / terms">
-                          <textarea
-                            maxLength={220}
-                            value={current.brand.terms}
-                            disabled={!canEdit}
-                            onChange={(e) =>
-                              edit({
-                                brand: {
-                                  ...current.brand,
-                                  terms: e.target.value,
-                                },
-                              })
-                            }
-                          />
-                        </Field>
-                        <button
-                          className="button"
-                          disabled={!canEdit}
-                          onClick={() => {
-                            edit({ brand: { ...data.brand } });
-                            toast.success("Latest store branding applied");
-                          }}
-                        >
-                          <Store size={15} />
-                          Apply saved store branding
-                        </button>
-                        <button
-                          className="button"
-                          disabled={!canEdit || issues.length > 0}
-                          onClick={() => {
-                            edit({ status: "ready" });
-                            toast.success("Campaign marked ready");
-                          }}
-                        >
-                          <Check size={15} />
-                          Mark ready
-                        </button>
-                      </div>
-                    </TabsContent>
-                  </Tabs>
-                </section>
-                <section className="canvas-area">
-                  <div className="canvas-label">
-                    <span>A4 PORTRAIT</span>
-                    <span>
-                      PAGE {actualPage + 1} OF {pages}
-                    </span>
-                  </div>
-                  <div className="canvas-tools">
-                    <button
-                      className={"button small" + (layoutMode ? " active" : "")}
-                      disabled={!canEdit}
-                      aria-pressed={layoutMode}
-                      onClick={() => setLayoutMode((v) => !v)}
-                    >
-                      <Move size={15} />
-                      {layoutMode ? "Done arranging" : "Arrange cards"}
-                    </button>
-                    {layoutMode && (
-                      <button
-                        className="button small"
-                        disabled={!canEdit}
-                        onClick={resetAllBoxes}
-                      >
-                        <LayoutGrid size={15} />
-                        Even grid
-                      </button>
-                    )}
-                  </div>
-                  <div className="flyer-stage">
-                    <div
-                      className="flyer-svg interactive-flyer"
-                      onClick={(e) => !layoutMode && chooseSlot(e.target)}
-                      onKeyDown={(e) => {
-                        if (layoutMode) return;
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          chooseSlot(e.target);
+                          setCsvRows(items);
+                          setCsvModalOpen(true);
+                        } catch {
+                          toast.error("Failed to parse CSV file");
                         }
                       }}
-                      dangerouslySetInnerHTML={{
-                        __html: flyerSvg(
-                          current,
-                          template,
-                          actualPage,
-                          {},
-                          !layoutMode,
-                        ),
-                      }}
                     />
-                    {layoutMode && canEdit && (
-                      <LayoutLayer
-                        entries={layoutEntries}
-                        color={template.color}
-                        accent={template.accent}
-                        currency={current.brand.currency}
-                        onSelect={(s) => setSlot(s)}
-                        onCommit={(s, b) => setBoxAt(s, b)}
-                      />
-                    )}
-                  </div>
-                  <div className="pagination-controls">
-                    <button
-                      className="icon-button"
-                      disabled={actualPage === 0}
-                      aria-label="Previous flyer page"
-                      onClick={() => setPage((p) => p - 1)}
+                  </label>
+                </div>
+
+                <div className="flex flex-col gap-1.5 max-h-[70vh] overflow-y-auto pr-1">
+                  {(activeBusiness.products || []).map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
                     >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <span>
-                      {actualPage + 1} / {pages}
-                    </span>
-                    <button
-                      className="icon-button"
-                      disabled={actualPage === pages - 1}
-                      aria-label="Next flyer page"
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                  <div className="canvas-note">
-                    {layoutMode ? (
-                      <>
-                        <Move size={14} />
-                        Drag a card to move it. Pull a handle to resize it.
-                      </>
-                    ) : (
-                      <>
-                        <Check size={14} />
-                        Click a product card to choose a product and price.
-                      </>
-                    )}
-                  </div>
-                  {issues.length > 0 && (
-                    <div className="validation-note">{issues.join(" ")}</div>
-                  )}
-                </section>
-              </div>
-            </div>
-          </>
-        )}
-        {view === "Product library" && (
-          <section className="content-surface">
-            <div className="library-toolbar">
-              <div className="searchbox">
-                <Search size={17} />
-                <input
-                  aria-label="Search product library"
-                  placeholder="Search products, categories or SKU…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              <Choice
-                label="Filter category"
-                value={filter}
-                onChange={setFilter}
-                options={[
-                  "All",
-                  ...new Set(data.products.map((p) => p.category)),
-                ].map((x) => ({ value: x, label: x }))}
-              />
-              <button
-                className="button"
-                disabled={!canEdit}
-                onClick={() => csvInput.current?.click()}
-              >
-                <Upload size={16} />
-                Import CSV
-              </button>
-              <button
-                className="button"
-                disabled={!canEdit}
-                onClick={() => bulkInput.current?.click()}
-              >
-                <ImagePlus size={16} />
-                Upload images
-              </button>
-              <button
-                className="button primary"
-                disabled={!canEdit}
-                onClick={addProduct}
-              >
-                <Plus size={16} />
-                Add product
-              </button>
-            </div>
-            {data.products.length === 0 ? (
-              <div className="empty">
-                <Package size={38} />
-                <h2>A home for every product</h2>
-                <p>
-                  Add a product, upload your images, or try the sample catalog.
-                </p>
-                <button
-                  className="button primary"
-                  disabled={!canEdit}
-                  onClick={() => {
-                    update((d) => ({ ...d, products: sampleProducts }));
-                    toast.success("Sample catalog added");
-                  }}
-                >
-                  Add sample catalog
-                </button>
-              </div>
-            ) : shownProducts.length === 0 ? (
-              <div className="empty">
-                <Search />
-                <h3>No products found</h3>
-                <p>Try a different name or category.</p>
-              </div>
-            ) : (
-              <div className="product-grid">
-                {shownProducts.map((p) => (
-                  <article className="product-card" key={p.id}>
-                    <div className="product-card-image">
-                      {p.image ? (
-                        <img src={p.image} alt={p.name} />
-                      ) : (
-                        <Package size={50} />
-                      )}
-                      <span>{p.category}</span>
-                    </div>
-                    <h3>{p.name}</h3>
-                    <p>
-                      {p.pack || "Add pack size"}
-                      {p.sku ? " · " + p.sku : ""}
-                    </p>
-                    <div>
-                      <strong>
-                        {data.brand.currency} {p.price.toFixed(2)}
-                      </strong>
+                      <div className="flex items-center gap-2 min-w-0">
+                        {p.image ? (
+                          <img src={p.image} alt={p.name} className="w-8 h-8 object-contain rounded" />
+                        ) : (
+                          <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center text-slate-400">
+                            <Package size={14} />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <b className="block text-xs text-slate-800 truncate">{p.name}</b>
+                          <span className="text-[10px] text-slate-400">
+                            {activeBusiness.profile?.defaultCurrency || "AED"} {p.price.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+
                       <button
-                        className="button small"
-                        onClick={() => {
-                          setProduct({ ...p });
-                          setModal("product");
-                        }}
+                        type="button"
+                        onClick={() => setProductModal(p)}
+                        className="text-[11px] text-emerald-700 font-semibold hover:underline"
                       >
                         Edit
                       </button>
-                      <button
-                        className="bare"
-                        aria-label={`Delete ${p.name}`}
-                        onClick={() =>
-                          setConfirm({ kind: "product", id: p.id })
-                        }
-                      >
-                        <Trash2 size={15} />
-                      </button>
                     </div>
-                  </article>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
-            <div className="surface-footer">
-              <button
-                className="text-button"
-                onClick={() =>
-                  downloadBlob(
-                    new Blob(
-                      [
-                        "name,pack,category,price,sku\nFresh bananas,1 kg,Fruit,7.95,BAN001\n",
-                      ],
-                      { type: "text/csv" },
-                    ),
-                    "flyerly-product-template.csv",
-                  )
-                }
-              >
-                Download CSV template
-              </button>
-              <span>Campaigns keep a copy of their products and prices.</span>
-            </div>
-          </section>
-        )}
-        {view === "Saved campaigns" && (
-          <section className="content-surface">
-            {data.campaigns.length === 0 ? (
-              <div className="empty">
-                <FolderOpen size={40} />
-                <h2>Your first week starts here</h2>
-                <p>Start fresh or make the sample campaign your own.</p>
-                <button
-                  className="button primary"
-                  disabled={!canEdit}
-                  onClick={() => startCampaign(true)}
-                >
-                  Use sample campaign
-                </button>
-              </div>
-            ) : (
-              <div className="campaign-grid">
-                {data.campaigns.map((c) => (
-                  <article className="campaign-card" key={c.id}>
-                    <button
-                      className="campaign-cover"
-                      onClick={() => openCampaign(c)}
-                      aria-label={`Open ${c.name}`}
-                    >
-                      <div
-                        dangerouslySetInnerHTML={{
-                          __html: flyerSvg(
-                            c,
-                            c.templateSnapshot ||
-                              allTemplates.find((t) => t.id === c.template) ||
-                              templates[0],
-                          ),
-                        }}
-                      />
-                    </button>
-                    <div className="campaign-info">
-                      <span className="draft-chip">
-                        {c.status.toUpperCase()}
-                      </span>
-                      <h3>{c.name}</h3>
-                      <p>
-                        {c.start} — {c.end} · {c.items.length} products
-                      </p>
-                      <div>
-                        <button
-                          className="button small"
-                          onClick={() => openCampaign(c)}
-                        >
-                          Open campaign
-                        </button>
-                        <button
-                          className="icon-button"
-                          aria-label={`Duplicate ${c.name}`}
-                          onClick={() => duplicate(c)}
-                        >
-                          <Copy size={15} />
-                        </button>
-                        <button
-                          className="bare"
-                          aria-label={`Delete ${c.name}`}
-                          onClick={() =>
-                            setConfirm({ kind: "campaign", id: c.id })
-                          }
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-        {view === "AI credits" && (
-          <CreditPanel info={business.info} refresh={business.refresh} />
-        )}
-        {view === "Business admin" && business.info?.isAdmin && (
-          <AdminPanel onPreview={showcase} />
-        )}
-        {view === "Templates" && (
-          <section className="content-surface">
-            <div className="section-title">
-              <h2>{allTemplates.length} ready-to-use layouts</h2>
-              {business.info?.isAdmin && (
-                <button className="button" onClick={showcase}>
-                  Wear Mart showcase
-                </button>
-              )}
-              <button
-                className="button"
-                disabled={!canEdit}
-                onClick={() => {
-                  setNewTemplate({
-                    ...templates[0],
-                    id: uid(),
-                    name: "My market template",
-                    style: "custom",
-                  });
-                  setModal("template");
-                }}
-              >
-                <Plus size={16} />
-                Create template
-              </button>
-            </div>
-            <div className="template-gallery">
-              {allTemplates.map((t) => (
-                <article className="template-card" key={t.id}>
-                  <div
-                    className="template-preview"
-                    dangerouslySetInnerHTML={{
-                      __html: flyerSvg(
-                        t.style.startsWith("wear-")
-                          ? {
-                              ...demo,
-                              brand: wearMartBrand,
-                              headline: "Items available in all 3 branches",
-                            }
-                          : demo,
-                        t,
-                      ),
-                    }}
-                  />
-                  <div>
-                    {(t.artwork ||
-                      t.style.startsWith("wear-") ||
-                      business.info?.business?.templates.some(
-                        (a) => a.id === t.id,
-                      )) && (
-                      <span className="collection-tag">
-                        {t.style.startsWith("wear-")
-                          ? "WEAR MART COLLECTION"
-                          : business.info?.business?.templates.some(
-                                (a) => a.id === t.id,
-                              )
-                            ? "YOUR PRIVATE COLLECTION"
-                            : "STUDIO COLLECTION"}
-                      </span>
-                    )}
-                    <h3>{t.name}</h3>
-                    <p>{t.capacity} products per page · A4</p>
-                    <button
-                      className="button"
-                      disabled={!canEdit}
-                      onClick={() => {
-                        edit({ template: t.id });
-                        setView("Campaign studio");
-                        setTab("design");
-                        toast.success("Template applied");
-                      }}
-                    >
-                      Use template <ArrowUpRight size={14} />
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-        )}
-        {view === "Store branding" && (
-          <section className="content-surface branding-surface">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!brand.name.trim() || !brand.currency.trim()) return;
-                update((d) => ({ ...d, brand }));
-                setBrandDraft(null);
-                toast.success("Branding saved for your next campaigns");
-              }}
-            >
-              <div className="section-title">
-                <h2>Your store identity</h2>
-                <Store size={20} />
-              </div>
-              <div className="logo-upload">
-                {brand.logo ? (
-                  <img src={brand.logo} alt="Store logo" />
-                ) : (
-                  <Store size={32} />
-                )}
-                <label className="button">
-                  {busy ? "Uploading…" : "Upload store logo"}
+
+            {activeTab === "branding" && (
+              <div className="flex flex-col gap-4 text-sm">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <span className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                    Store Branding & Profile
+                  </span>
+                </div>
+
+                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                  <span>Store Name (English)</span>
                   <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    hidden
-                    disabled={busy}
-                    onChange={async (e) => {
-                      const f = e.target.files?.[0];
-                      if (!f) return;
-                      setBusy(true);
-                      try {
-                        setBrandDraft({ ...brand, logo: await upload(f) });
-                      } catch (e) {
-                        toast.error((e as Error).message);
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
+                    type="text"
+                    value={activeBusiness.profile?.name || ""}
+                    onChange={(e) => handleUpdateBusinessProfile({ name: e.target.value })}
+                    className="h-8 border border-slate-300 rounded px-2"
                   />
                 </label>
-                {brand.logo && (
+
+                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                  <span>Arabic Store Name</span>
+                  <input
+                    type="text"
+                    dir="rtl"
+                    value={activeBusiness.profile?.arabicName || ""}
+                    onChange={(e) => handleUpdateBusinessProfile({ arabicName: e.target.value })}
+                    className="h-8 border border-slate-300 rounded px-2"
+                  />
+                </label>
+
+                {/* Logo Upload */}
+                <div className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                  <span>Business Logo</span>
+                  <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    {activeBusiness.profile?.logo ? (
+                      <img
+                        src={activeBusiness.profile.logo}
+                        alt="Logo"
+                        className="w-12 h-12 object-contain bg-white rounded border border-slate-200 p-1"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded bg-slate-200 flex items-center justify-center text-slate-400 font-bold">
+                        Logo
+                      </div>
+                    )}
+                    <label className="text-xs font-bold text-emerald-800 bg-white border border-slate-300 px-3 py-1.5 rounded-md hover:bg-slate-100 cursor-pointer">
+                      Upload Logo
+                      <input
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const form = new FormData();
+                          form.append("file", file);
+                          try {
+                            const res = await fetch("/api/assets", { method: "POST", body: form });
+                            const json = (await res.json()) as { url?: string };
+                            if (json.url) {
+                              handleUpdateBusinessProfile({ logo: json.url });
+                              toast.success("Logo uploaded!");
+                            }
+                          } catch {
+                            toast.error("Logo upload failed");
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Primary Brand Color */}
+                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                  <span>Primary Brand Color</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={activeBusiness.profile?.brandColors?.primary || "#166534"}
+                      onChange={(e) =>
+                        handleUpdateBusinessProfile({
+                          brandColors: {
+                            ...(activeBusiness.profile?.brandColors || {
+                              primary: "#166534",
+                              secondary: "#f5d54b",
+                              accent: "#ffda43",
+                            }),
+                            primary: e.target.value,
+                          },
+                        })
+                      }
+                      className="h-8 w-12 p-0.5 rounded border border-slate-300 cursor-pointer"
+                    />
+                    <span className="text-xs text-slate-600 font-mono">
+                      {activeBusiness.profile?.brandColors?.primary || "#166534"}
+                    </span>
+                  </div>
+                </label>
+
+                {/* Location / QR link */}
+                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                  <span>Google Maps Location URL (for QR Code)</span>
+                  <input
+                    type="url"
+                    placeholder="https://maps.google.com/..."
+                    value={activeBusiness.profile?.defaultQrDestination || ""}
+                    onChange={(e) => handleUpdateBusinessProfile({ defaultQrDestination: e.target.value })}
+                    className="h-8 border border-slate-300 rounded px-2 text-xs"
+                  />
+                </label>
+
+                {/* Phone & Timings */}
+                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                  <span>Phone Number</span>
+                  <input
+                    type="text"
+                    value={activeBusiness.profile?.phone || ""}
+                    onChange={(e) => handleUpdateBusinessProfile({ phone: e.target.value })}
+                    className="h-8 border border-slate-300 rounded px-2 text-xs"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                  <span>Store Hours</span>
+                  <input
+                    type="text"
+                    value={activeBusiness.profile?.timings || ""}
+                    onChange={(e) => handleUpdateBusinessProfile({ timings: e.target.value })}
+                    className="h-8 border border-slate-300 rounded px-2 text-xs"
+                  />
+                </label>
+              </div>
+            )}
+
+            {activeTab === "admin" && (
+              <AdminPanel onPreview={() => toast("Showcase loaded")} />
+            )}
+          </aside>
+        )}
+
+        {/* Center: Flyer Canvas */}
+        <main
+          onClick={handleCanvasClick}
+          className="flex-1 flex flex-col items-center justify-start overflow-y-auto p-8 relative bg-slate-100/80 select-none"
+        >
+          {/* Page Navigation Indicator */}
+          <div className="flex items-center gap-3 bg-white border border-slate-200 px-4 py-1.5 rounded-full shadow-sm mb-5 text-xs font-bold text-slate-700">
+            <button
+              type="button"
+              disabled={clampedPageIndex === 0}
+              onClick={(e) => {
+                e.stopPropagation();
+                setActivePageIndex((p) => Math.max(0, p - 1));
+              }}
+              className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-20"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span>
+              Page {clampedPageIndex + 1} of {currentFlyer.pages.length}
+            </span>
+            <button
+              type="button"
+              disabled={clampedPageIndex === currentFlyer.pages.length - 1}
+              onClick={(e) => {
+                e.stopPropagation();
+                setActivePageIndex((p) => Math.min(currentFlyer.pages.length - 1, p + 1));
+              }}
+              className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-20"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* SVG Page Canvas */}
+          <div
+            className="w-full max-w-[540px] bg-white rounded-lg shadow-2xl overflow-hidden border border-slate-300/80 transition-all duration-150"
+            style={{ aspectRatio: "794 / 1123" }}
+            dangerouslySetInnerHTML={{ __html: pageSvgString }}
+          />
+
+          {/* Canvas Bottom Note */}
+          <div className="mt-4 text-xs text-slate-400 flex items-center gap-2">
+            <span>A4 Standard Portrait (794 × 1123)</span>
+            <span>·</span>
+            <span>Click any cell to edit products or borders</span>
+          </div>
+        </main>
+
+        {/* Right Sidebar: Contextual Inspector */}
+        <aside className="w-80 bg-white border-l border-slate-200 flex flex-col p-4 overflow-y-auto shrink-0">
+          {selectedCell && activeGrid ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between border-b pb-2">
+                <span className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                  Grid & Cell Settings
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCellId(null)}
+                  className="text-xs text-slate-400 hover:text-slate-700 font-semibold"
+                >
+                  Done
+                </button>
+              </div>
+
+              <GridEditorControls
+                grid={activeGrid}
+                onChange={(updatedGrid) => {
+                  updateActivePage((page) => ({
+                    ...page,
+                    sections: page.sections.map((sec) =>
+                      sec.type === "grid" && sec.grid?.id === updatedGrid.id ? { ...sec, grid: updatedGrid } : sec,
+                    ),
+                  }));
+                }}
+                selectedCellIds={selectedCellId ? [selectedCellId] : []}
+                onSelectCells={(ids) => setSelectedCellId(ids[0] || null)}
+                onOpenProductSearch={(cellId) => setProductPickerCellId(cellId)}
+                onOpenBulkFill={() => setBulkFillOpen(true)}
+                currency={activeBusiness.profile?.defaultCurrency || "AED"}
+              />
+            </div>
+          ) : selectedSection ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between border-b pb-2">
+                <span className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                  Section Settings
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSectionId(null)}
+                  className="text-xs text-slate-400 hover:text-slate-700 font-semibold"
+                >
+                  Done
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-3 text-xs">
+                <label className="flex flex-col gap-1 font-semibold text-slate-700">
+                  <span>Section Headline</span>
+                  <input
+                    type="text"
+                    value={selectedSection.title || ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateActivePage((p) => ({
+                        ...p,
+                        sections: p.sections.map((s) =>
+                          s.id === selectedSection.id ? { ...s, title: val } : s,
+                        ),
+                      }));
+                    }}
+                    className="h-8 border border-slate-300 rounded px-2"
+                  />
+                </label>
+
+                {selectedSection.subtitle !== undefined && (
+                  <label className="flex flex-col gap-1 font-semibold text-slate-700">
+                    <span>Subtitle</span>
+                    <input
+                      type="text"
+                      value={selectedSection.subtitle || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateActivePage((p) => ({
+                          ...p,
+                          sections: p.sections.map((s) =>
+                            s.id === selectedSection.id ? { ...s, subtitle: val } : s,
+                          ),
+                        }));
+                      }}
+                      className="h-8 border border-slate-300 rounded px-2"
+                    />
+                  </label>
+                )}
+
+                {selectedSection.badge !== undefined && (
+                  <label className="flex flex-col gap-1 font-semibold text-slate-700">
+                    <span>Promotional Badge</span>
+                    <input
+                      type="text"
+                      value={selectedSection.badge || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateActivePage((p) => ({
+                          ...p,
+                          sections: p.sections.map((s) =>
+                            s.id === selectedSection.id ? { ...s, badge: val } : s,
+                          ),
+                        }));
+                      }}
+                      className="h-8 border border-slate-300 rounded px-2"
+                    />
+                  </label>
+                )}
+
+                <label className="flex flex-col gap-1 font-semibold text-slate-700">
+                  <span>Section Height: {selectedSection.height || 260}px</span>
+                  <input
+                    type="range"
+                    min={60}
+                    max={500}
+                    value={selectedSection.height || 260}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      updateActivePage((p) => ({
+                        ...p,
+                        sections: p.sections.map((s) =>
+                          s.id === selectedSection.id ? { ...s, height: val } : s,
+                        ),
+                      }));
+                    }}
+                    className="accent-emerald-700"
+                  />
+                </label>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5 text-sm">
+              <div className="border-b pb-2">
+                <span className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                  Page Overview
+                </span>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
+                <b className="text-xs font-bold text-slate-800">
+                  {activePage?.name || "Page 1"}
+                </b>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Click on any grid cell to edit products, prices, and border styles. Or click a section to customize headers.
+                </p>
+
+                <div className="flex flex-col gap-2 pt-2 border-t border-slate-200">
                   <button
                     type="button"
-                    className="bare"
-                    aria-label="Remove logo"
-                    onClick={() => setBrandDraft({ ...brand, logo: "" })}
+                    onClick={() => setBulkFillOpen(true)}
+                    className="py-2 px-3 bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm hover:bg-emerald-800 cursor-pointer"
                   >
-                    <X size={18} />
+                    <Sparkles size={14} /> Bulk Fill Products
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("pages")}
+                    className="py-2 px-3 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50 flex items-center justify-center gap-1.5"
+                  >
+                    <Palette size={14} /> Change Page Background
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleExport("pdf")}
+                    className="py-2 px-3 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50 flex items-center justify-center gap-1.5"
+                  >
+                    <Download size={14} /> Download Ready Flyer
+                  </button>
+                </div>
+              </div>
+
+              {/* AI Credits Widget */}
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-800 block">
+                    AI Credit Balance
+                  </span>
+                  <b className="text-xl font-black text-emerald-950">
+                    {businessContext.info?.balance ?? 20} <small className="text-xs font-normal">credits</small>
+                  </b>
+                </div>
+                {businessContext.info?.isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("admin")}
+                    className="text-xs bg-white text-emerald-800 border border-emerald-300 font-bold px-2 py-1 rounded"
+                  >
+                    Manage
                   </button>
                 )}
               </div>
-              <div className="form-stack">
-                <Field label="Store name">
-                  <input
-                    required
-                    maxLength={60}
-                    value={brand.name}
-                    onChange={(e) =>
-                      setBrandDraft({ ...brand, name: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Address or tagline">
-                  <input
-                    maxLength={140}
-                    value={brand.address}
-                    onChange={(e) =>
-                      setBrandDraft({ ...brand, address: e.target.value })
-                    }
-                  />
-                </Field>
-                <div className="two-cols">
-                  <Field label="Phone">
-                    <input
-                      maxLength={40}
-                      value={brand.phone}
-                      onChange={(e) =>
-                        setBrandDraft({ ...brand, phone: e.target.value })
-                      }
-                    />
-                  </Field>
-                  <Field label="Currency">
-                    <input
-                      required
-                      maxLength={8}
-                      value={brand.currency}
-                      onChange={(e) =>
-                        setBrandDraft({ ...brand, currency: e.target.value })
-                      }
-                    />
-                  </Field>
-                </div>
-                <Field label="Brand color">
-                  <input
-                    type="color"
-                    value={brand.color}
-                    onChange={(e) =>
-                      setBrandDraft({ ...brand, color: e.target.value })
-                    }
-                  />
-                </Field>
-                <LocationFields brand={brand} onChange={setBrandDraft} />
-                <Field label="Offer terms">
-                  <textarea
-                    rows={3}
-                    maxLength={220}
-                    value={brand.terms}
-                    onChange={(e) =>
-                      setBrandDraft({ ...brand, terms: e.target.value })
-                    }
-                  />
-                </Field>
-                <button className="button primary" disabled={!canEdit}>
-                  <Save size={16} />
-                  Save store branding
-                </button>
-              </div>
-            </form>
-            <aside>
-              <div
-                className="brand-preview"
-                style={{ background: brand.color }}
-              >
-                {brand.logo && <img src={brand.logo} alt="Logo preview" />}
-                <h2>{brand.name}</h2>
-                <p>{brand.address}</p>
-                <b>
-                  Fresh offers.
-                  <br />
-                  Familiar faces.
-                </b>
-                <small>{brand.phone}</small>
-              </div>
-              <p>
-                New campaigns use these details. Apply updated branding to an
-                existing flyer from its Details tab.
-              </p>
-              <button className="button" onClick={backup}>
-                <Download size={15} />
-                Download workspace backup
-              </button>
-            </aside>
-          </section>
-        )}
-        <div className="bottom-note">
-          <span>
-            <Leaf size={16} />
-            Built for your busiest weeks.
-          </span>
-          <span>
-            Upload once. Reuse every week. <ArrowUpRight size={15} />
-          </span>
-        </div>
-      </main>
-      <input
-        ref={bulkInput}
-        type="file"
-        multiple
-        accept="image/png,image/jpeg,image/webp"
-        hidden
-        onChange={(e) => uploadProduct(e.target.files)}
+            </div>
+          )}
+        </aside>
+      </div>
+
+      {/* Fast Product Autocomplete Modal for Single Cell */}
+      <ProductPickerModal
+        open={productPickerCellId !== null}
+        onClose={() => setProductPickerCellId(null)}
+        products={activeBusiness.products || []}
+        onSelectProduct={handleCellProductAssign}
+        currency={activeBusiness.profile?.defaultCurrency || "AED"}
       />
-      <input
-        ref={csvInput}
-        type="file"
-        accept=".csv,text/csv"
-        hidden
-        onChange={(e) => readCsv(e.target.files?.[0])}
+
+      {/* Bulk Product Fill Modal */}
+      <BulkProductFillModal
+        open={bulkFillOpen}
+        onClose={() => setBulkFillOpen(false)}
+        products={activeBusiness.products || []}
+        onAssignProducts={handleBulkAssign}
+        emptyCellCount={emptyCellCount}
+        currency={activeBusiness.profile?.defaultCurrency || "AED"}
       />
-      <Dialog
-        open={modal !== null}
-        onOpenChange={(open) => {
-          if (!open && !busy && !exporting) setModal(null);
-        }}
-      >
-        <DialogContent
-          className={
-            modal === "picker" || modal === "csv" ? "wide-dialog" : "app-dialog"
-          }
-        >
-          <DialogHeader>
-            <DialogTitle>
-              {modal === "product"
-                ? "Product details"
-                : modal === "picker"
-                  ? "Add products to your flyer"
-                  : modal === "export"
-                    ? "Ready to go out into the world?"
-                    : modal === "template"
-                      ? "Create a reusable template"
-                      : "Review your product import"}
-            </DialogTitle>
-            <DialogDescription>
-              {modal === "product"
-                ? "Save the image once. Use this product in any weekly campaign."
-                : modal === "picker"
-                  ? "Select a product to add it with its current price."
-                  : modal === "export"
-                    ? "Download a print-sized PDF or an image to share."
-                    : modal === "template"
-                      ? "Choose your colors and product layout."
-                      : "Check the rows below before adding them to your library."}
-            </DialogDescription>
-          </DialogHeader>
-          {modal === "product" && product && (
-            <form onSubmit={saveProduct} className="form-stack">
-              <div className="product-upload">
-                {product.image ? (
-                  <img
-                    src={product.image}
-                    alt={product.name || "Product image"}
-                  />
-                ) : (
-                  <ImagePlus size={40} />
-                )}
-                <label className="button">
-                  {busy ? "Uploading…" : "Choose image"}
-                  <input
-                    type="file"
-                    hidden
-                    accept="image/png,image/jpeg,image/webp"
-                    disabled={busy}
-                    onChange={async (e) => {
-                      const f = e.target.files?.[0];
-                      if (!f) return;
-                      setBusy(true);
-                      try {
-                        const image = await upload(f);
-                        setProduct((p) => (p ? { ...p, image } : p));
-                      } catch (e) {
-                        toast.error((e as Error).message);
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-              <EnhanceButton
-                source={product.image}
-                onApply={(image) => setProduct({ ...product, image })}
-                info={business.info}
-                refresh={business.refresh}
-              />
-              <Field label="Arabic product name (optional)">
-                <input
-                  dir="rtl"
-                  maxLength={100}
-                  value={product.arabicName || ""}
-                  onChange={(e) =>
-                    setProduct({ ...product, arabicName: e.target.value })
-                  }
-                />
-                <small className="help-text">
-                  Appears on Wear Mart layouts.
-                </small>
-              </Field>
-              <Field label="Product name">
+
+      {/* Single Product Add / Edit Modal */}
+      {productModal && (
+        <Dialog open={!!productModal} onOpenChange={(o) => !o && setProductModal(null)}>
+          <DialogContent className="max-w-md p-6">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold">
+                {productModal.name ? "Edit Product" : "Add Product to Library"}
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Saved products can be searched and inserted into any promotional flyer.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const nextProds = (activeBusiness.products || []).some((p) => p.id === productModal.id)
+                  ? (activeBusiness.products || []).map((p) => (p.id === productModal.id ? productModal : p))
+                  : [productModal, ...(activeBusiness.products || [])];
+
+                update((prev) => {
+                  const bizList = (prev.businesses || businesses).map((b) =>
+                    b.id === activeBusiness.id ? { ...b, products: nextProds } : b,
+                  );
+                  return { ...prev, businesses: bizList, products: nextProds };
+                });
+                setProductModal(null);
+                toast.success("Product saved to library");
+              }}
+              className="flex flex-col gap-3 pt-2"
+            >
+              <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                <span>Product Name (English)</span>
                 <input
                   required
-                  maxLength={100}
-                  value={product.name}
-                  onChange={(e) =>
-                    setProduct({ ...product, name: e.target.value })
-                  }
+                  type="text"
+                  value={productModal.name}
+                  onChange={(e) => setProductModal({ ...productModal, name: e.target.value })}
+                  className="h-8 border border-slate-300 rounded px-2 text-xs"
                 />
-              </Field>
-              <div className="two-cols">
-                <Field label="Pack size">
-                  <input
-                    maxLength={50}
-                    placeholder="e.g. 1 kg"
-                    value={product.pack}
-                    onChange={(e) =>
-                      setProduct({ ...product, pack: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label={`Regular price · ${data.brand.currency}`}>
+              </label>
+
+              <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                <span>Arabic Name (optional)</span>
+                <input
+                  type="text"
+                  dir="rtl"
+                  value={productModal.arabicName || ""}
+                  onChange={(e) => setProductModal({ ...productModal, arabicName: e.target.value })}
+                  className="h-8 border border-slate-300 rounded px-2 text-xs"
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                  <span>Price ({activeBusiness.profile?.defaultCurrency || "AED"})</span>
                   <input
                     required
                     type="number"
-                    min="0"
-                    max="999999"
-                    step=".01"
-                    value={product.price}
-                    onChange={(e) =>
-                      setProduct({ ...product, price: Number(e.target.value) })
-                    }
+                    step="0.05"
+                    value={productModal.price}
+                    onChange={(e) => setProductModal({ ...productModal, price: Number(e.target.value) })}
+                    className="h-8 border border-slate-300 rounded px-2 text-xs font-bold"
                   />
-                </Field>
-              </div>
-              <div className="two-cols">
-                <Field label="Category">
+                </label>
+
+                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                  <span>Pack / Unit</span>
                   <input
-                    maxLength={40}
-                    value={product.category}
-                    onChange={(e) =>
-                      setProduct({ ...product, category: e.target.value })
-                    }
+                    type="text"
+                    placeholder="1 kg, 2 pcs"
+                    value={productModal.pack}
+                    onChange={(e) => setProductModal({ ...productModal, pack: e.target.value })}
+                    className="h-8 border border-slate-300 rounded px-2 text-xs"
                   />
-                </Field>
-                <Field label="SKU / barcode (optional)">
-                  <input
-                    maxLength={80}
-                    value={product.sku}
-                    onChange={(e) =>
-                      setProduct({ ...product, sku: e.target.value })
-                    }
-                  />
-                </Field>
+                </label>
               </div>
-              <button className="button primary" disabled={!canEdit}>
-                <Check size={16} />
-                Save product
-              </button>
-            </form>
-          )}
-          {modal === "picker" && (
-            <>
-              <div className="searchbox">
-                <Search size={17} />
+
+              <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                <span>Category</span>
                 <input
-                  aria-label="Search products to add"
-                  placeholder="Search your product library…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  type="text"
+                  value={productModal.category}
+                  onChange={(e) => setProductModal({ ...productModal, category: e.target.value })}
+                  className="h-8 border border-slate-300 rounded px-2 text-xs"
                 />
+              </label>
+
+              {/* Photo upload */}
+              <div className="flex flex-col gap-1 text-xs font-semibold text-slate-700 pt-1">
+                <span>Product Photo</span>
+                <div className="flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  {productModal.image ? (
+                    <img src={productModal.image} alt="" className="w-10 h-10 object-contain bg-white rounded p-0.5 border" />
+                  ) : (
+                    <div className="w-10 h-10 rounded bg-slate-200 flex items-center justify-center text-slate-400">
+                      <Package size={16} />
+                    </div>
+                  )}
+                  <label className="text-xs font-bold text-emerald-800 bg-white border border-slate-300 px-3 py-1.5 rounded hover:bg-slate-100 cursor-pointer">
+                    Upload Photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        const form = new FormData();
+                        form.append("file", f);
+                        try {
+                          const res = await fetch("/api/assets", { method: "POST", body: form });
+                          const json = (await res.json()) as { url?: string };
+                          if (json.url) {
+                            setProductModal({ ...productModal, image: json.url });
+                            toast.success("Photo uploaded!");
+                          }
+                        } catch {
+                          toast.error("Upload failed");
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
-              {data.products.length === 0 ? (
-                <div className="empty compact">
-                  <p>Your library is empty.</p>
-                  <button
-                    className="button"
-                    onClick={() => {
-                      update((d) => ({ ...d, products: sampleProducts }));
-                    }}
-                  >
-                    Add sample catalog
-                  </button>
-                  <button className="button primary" onClick={addProduct}>
-                    Create a product
-                  </button>
-                </div>
-              ) : (
-                <div className="picker-list">
-                  {data.products
-                    .filter((p) =>
-                      [p.name, p.arabicName, p.sku]
-                        .join(" ")
-                        .toLowerCase()
-                        .includes(search.toLowerCase()),
-                    )
-                    .map((p) => {
-                      const added = current.items.some((x) => x.id === p.id);
-                      return (
-                        <div className="picker-row" key={p.id}>
-                          <Thumb product={p} />
-                          <div>
-                            <b>{p.name}</b>
-                            <small>
-                              {p.pack} · {data.brand.currency}{" "}
-                              {p.price.toFixed(2)}
-                            </small>
-                          </div>
-                          <button
-                            className="button small"
-                            disabled={added || current.items.length >= 120}
-                            onClick={() => {
-                              edit({
-                                items: [
-                                  ...current.items,
-                                  {
-                                    ...p,
-                                    offer: p.price,
-                                    badge: "",
-                                    slot: nextSlot(),
-                                    showOldPrice: false,
-                                  },
-                                ],
-                              });
-                              toast.success(`${p.name} added`);
-                            }}
-                          >
-                            {added ? (
-                              <>
-                                <Check size={14} />
-                                Added
-                              </>
-                            ) : (
-                              <>
-                                <Plus size={14} />
-                                Add
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
-                </div>
-              )}
-              <button className="button primary" onClick={() => setModal(null)}>
-                Done
-              </button>
-            </>
-          )}
-          {modal === "export" && (
-            <div className="export-options">
-              {download && (
-                <a
-                  className="button primary"
-                  href={download.url}
-                  download={download.name}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setProductModal(null)}
+                  className="px-4 py-2 text-xs font-semibold rounded bg-slate-100 text-slate-700"
                 >
-                  <Download size={18} />
-                  Download{" "}
-                  {download.name.endsWith("pdf")
-                    ? "PDF"
-                    : download.name.endsWith("png")
-                      ? "PNG"
-                      : "SVG"}
-                </a>
-              )}
-              {exportError && <div className="notice error">{exportError}</div>}
-              {issues.length > 0 && (
-                <div className="notice error">{issues.join(" ")}</div>
-              )}
-              <button
-                className="export-option"
-                disabled={exporting || issues.length > 0}
-                onClick={() => doExport("pdf")}
-              >
-                <Files />
-                <div>
-                  <b>
-                    PDF · All {pages} {pages === 1 ? "page" : "pages"}
-                  </b>
-                  <p>A4 document, high-resolution images</p>
-                </div>
-                <Download size={18} />
-              </button>
-              <button
-                className="export-option"
-                disabled={exporting || issues.length > 0}
-                onClick={() => doExport("png")}
-              >
-                <ImagePlus />
-                <div>
-                  <b>PNG · Page {actualPage + 1}</b>
-                  <p>2480 × 3508 px, ready to share</p>
-                </div>
-                <Download size={18} />
-              </button>
-              <button
-                className="export-option"
-                disabled={exporting || issues.length > 0}
-                onClick={() => doExport("svg")}
-              >
-                <LayoutTemplate />
-                <div>
-                  <b>SVG · Page {actualPage + 1}</b>
-                  <p>Scalable text with embedded product images</p>
-                </div>
-                <Download size={18} />
-              </button>
-              {exporting && (
-                <p className="inline-loading">
-                  <Loader2 className="spin" size={16} />
-                  Preparing your download…
-                </p>
-              )}
-              <p className="help-text">
-                PDF uses RGB colors and no bleed. Ask your printer about their
-                requirements before a large print run.
-              </p>
-              {current.items.some((p) => !p.image) && (
-                <p className="help-text">
-                  Some products do not have an image yet.
-                </p>
-              )}
-              {current.items.some((p) => p.name.length > 45) && (
-                <p className="help-text">
-                  Long names may be shortened. Check the preview before sharing.
-                </p>
-              )}
-            </div>
-          )}
-          {modal === "template" && (
-            <form
-              className="form-stack"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const t = { ...newTemplate, id: uid() };
-                update((d) => ({
-                  ...d,
-                  customTemplates: [...d.customTemplates, t],
-                }));
-                setModal(null);
-                toast.success("Template added to your library");
-              }}
-            >
-              <Field label="Template name">
-                <input
-                  required
-                  maxLength={50}
-                  value={newTemplate.name}
-                  onChange={(e) =>
-                    setNewTemplate({ ...newTemplate, name: e.target.value })
-                  }
-                />
-              </Field>
-              <div className="two-cols">
-                <Field label="Main color">
-                  <input
-                    type="color"
-                    value={newTemplate.color}
-                    onChange={(e) =>
-                      setNewTemplate({ ...newTemplate, color: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Accent color">
-                  <input
-                    type="color"
-                    value={newTemplate.accent}
-                    onChange={(e) =>
-                      setNewTemplate({ ...newTemplate, accent: e.target.value })
-                    }
-                  />
-                </Field>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs font-bold rounded bg-emerald-700 text-white hover:bg-emerald-800"
+                >
+                  Save Product
+                </button>
               </div>
-              <Field label="Products per page">
-                <Choice
-                  label="Template layout"
-                  value={`${newTemplate.columns}-${newTemplate.capacity}`}
-                  onChange={(v) => {
-                    const [columns, capacity] = v.split("-").map(Number);
-                    setNewTemplate({ ...newTemplate, columns, capacity });
-                  }}
-                  options={[
-                    { value: "2-4", label: "4 products · 2 columns" },
-                    { value: "3-6", label: "6 products · 3 columns" },
-                    { value: "2-6", label: "6 products · 2 columns" },
-                    { value: "3-9", label: "9 products · 3 columns" },
-                  ]}
-                />
-              </Field>
-              <button className="button primary" disabled={!canEdit}>
-                <Plus size={16} />
-                Save template
-              </button>
             </form>
-          )}
-          {modal === "csv" && (
-            <>
-              <p className="help-text">
-                {csvRows.length} products will be added. Images can be uploaded
-                after import. Existing products will be kept.
-              </p>
-              <div className="csv-preview">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Pack</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Category</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {csvRows.slice(0, 100).map((p) => (
-                      <TableRow key={p.id}>
-                        <TableCell>{p.name}</TableCell>
-                        <TableCell>{p.pack}</TableCell>
-                        <TableCell>{p.price.toFixed(2)}</TableCell>
-                        <TableCell>{p.category}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              {csvRows.length > 100 && <p>Showing the first 100 rows.</p>}
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* CSV Import Preview Modal */}
+      {csvModalOpen && (
+        <Dialog open={csvModalOpen} onOpenChange={setCsvModalOpen}>
+          <DialogContent className="max-w-xl max-h-[80vh] flex flex-col p-6">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold">
+                Import Products from CSV ({csvRows.length} found)
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Review imported rows before adding them to your business library.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto max-h-60 border border-slate-200 rounded-lg p-2 divide-y divide-slate-100">
+              {csvRows.slice(0, 30).map((r, i) => (
+                <div key={i} className="py-1.5 flex items-center justify-between text-xs">
+                  <div>
+                    <b className="text-slate-800">{r.name}</b>
+                    {r.arabicName && <span className="text-slate-400 ml-2" dir="rtl">{r.arabicName}</span>}
+                  </div>
+                  <span className="font-bold text-emerald-800">
+                    {activeBusiness.profile?.defaultCurrency || "AED"} {r.price.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
               <button
-                className="button primary"
-                onClick={() => {
-                  update((d) => ({
-                    ...d,
-                    products: [...csvRows, ...d.products],
-                  }));
-                  setModal(null);
-                  toast.success(`${csvRows.length} products imported`);
-                }}
+                type="button"
+                onClick={() => setCsvModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold rounded bg-slate-100 text-slate-700"
               >
-                Import {csvRows.length} products
+                Cancel
               </button>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-      <SlotEditor
-        slot={modal === null ? slot : null}
-        offer={current.items.find((_, i) => slotNumber(current, i) === slot)}
-        products={data.products}
-        currency={current.brand.currency}
-        onClose={() => setSlot(null)}
-        onNew={addProduct}
-        onRemove={() => {
-          edit({
-            items: current.items
-              .map((p, i) => ({ ...p, slot: slotNumber(current, i) }))
-              .filter((p) => p.slot !== slot),
-          });
-          setSlot(null);
-        }}
-        onSave={(p) => {
-          const items = current.items
-            .map((p, i) => ({ ...p, slot: slotNumber(current, i) }))
-            .filter((p) => p.slot !== slot);
-          items.push({ ...p, slot: slot! });
-          items.sort((a, b) => a.slot - b.slot);
-          edit({ items });
-          setSlot(null);
-        }}
-      />
-      <AlertDialog
-        open={!!confirm}
-        onOpenChange={(open) => !open && setConfirm(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this {confirm?.kind}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirm?.kind === "product"
-                ? "This removes it from your library. Saved campaigns keep their existing product images and prices."
-                : "This campaign will be removed from your workspace. This cannot be undone."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (confirm?.kind === "product")
-                  update((d) => ({
-                    ...d,
-                    products: d.products.filter((p) => p.id !== confirm.id),
-                  }));
-                else if (confirm)
-                  update((d) => ({
-                    ...d,
-                    campaigns: d.campaigns.filter((c) => c.id !== confirm.id),
-                  }));
-                setConfirm(null);
-                toast.success("Deleted");
-              }}
+              <button
+                type="button"
+                onClick={() => {
+                  update((prev) => {
+                    const nextProds = [...csvRows, ...(activeBusiness.products || [])];
+                    const bizList = (prev.businesses || businesses).map((b) =>
+                      b.id === activeBusiness.id ? { ...b, products: nextProds } : b,
+                    );
+                    return { ...prev, businesses: bizList, products: nextProds };
+                  });
+                  setCsvModalOpen(false);
+                  toast.success(`Imported ${csvRows.length} products!`);
+                }}
+                className="px-4 py-2 text-xs font-bold rounded bg-emerald-700 text-white hover:bg-emerald-800"
+              >
+                Import {csvRows.length} Products
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Download Ready Dialog */}
+      {downloadInfo && (
+        <Dialog open={!!downloadInfo} onOpenChange={(o) => !o && setDownloadInfo(null)}>
+          <DialogContent className="max-w-sm p-6 text-center flex flex-col items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+              <Check size={24} />
+            </div>
+            <DialogTitle className="text-base font-bold">Your Flyer is Ready!</DialogTitle>
+            <DialogDescription className="text-xs">
+              Click the button below to download the high-resolution file.
+            </DialogDescription>
+            <a
+              href={downloadInfo.url}
+              download={downloadInfo.name}
+              onClick={() => setDownloadInfo(null)}
+              className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-2 transition"
             >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </SidebarProvider>
+              <Download size={14} /> Download {downloadInfo.name}
+            </a>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
   );
 }

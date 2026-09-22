@@ -11,6 +11,7 @@ import {
 } from "./flyer-layout";
 
 import { wearFlyer } from "./wear-flyer";
+import { renderPageSvg } from "./flyer-renderer";
 
 export const esc = (s: unknown) =>
   String(s).replace(
@@ -668,6 +669,13 @@ export function flyerSvg(
   images: Record<string, string> = {},
   interactive = false,
 ) {
+  if (c.flyerDoc?.pages?.[page]) {
+    return renderPageSvg(c.flyerDoc.pages[page], c.brand, {
+      interactive,
+      images,
+    });
+  }
+
   let svg = t.style.startsWith("wear-")
     ? wearFlyer(c, t, page, images)
     : baseFlyerSvg(c, t, page, images);

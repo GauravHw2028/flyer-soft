@@ -189,6 +189,17 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
       jobs: { id: string; owner: string; status: string }[];
     } | null>(null),
     [draft, setDraft] = useState<Business | null>(null),
+    [aiModal, setAiModal] = useState<{
+      business: Business;
+      themePrompt: string;
+      category: string;
+    } | null>(null),
+    [creditModal, setCreditModal] = useState<{
+      owner: string;
+      delta: number;
+      reason: string;
+    } | null>(null),
+    [generatingAi, setGeneratingAi] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   async function load() {
@@ -252,6 +263,21 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
           Open showcase flyer
         </button>
       </div>
+      <div className="flex justify-end gap-2 mb-3">
+        <button
+          className="button"
+          onClick={() =>
+            setCreditModal({
+              owner: "",
+              delta: 20,
+              reason: "Admin manual credit grant",
+            })
+          }
+        >
+          💳 Adjust Account Credits
+        </button>
+      </div>
+
       {state?.businesses.map((b) => (
         <div className="business-row" key={b.id}>
           <div>
@@ -260,12 +286,32 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
               {b.email} · {b.templates.length}/10 private templates
             </small>
           </div>
-          <button
-            className="button small"
-            onClick={() => setDraft(structuredClone(b))}
-          >
-            Manage templates
-          </button>
+          <div className="toolbar">
+            <button
+              className="button small"
+              style={{
+                background: "#f0fdf4",
+                borderColor: "#86efac",
+                color: "#166534",
+                fontWeight: 600,
+              }}
+              onClick={() =>
+                setAiModal({
+                  business: b,
+                  themePrompt: "Weekend Supermarket Deals",
+                  category: "Supermarket",
+                })
+              }
+            >
+              ✨ Generate AI Template (ChatGPT)
+            </button>
+            <button
+              className="button small"
+              onClick={() => setDraft(structuredClone(b))}
+            >
+              Manage templates
+            </button>
+          </div>
         </div>
       ))}
       {!state?.businesses.length && (
@@ -519,6 +565,164 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
               </div>
               <button className="button primary" disabled={busy}>
                 Save business & templates
+              </button>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Template Generator Dialog with ChatGPT */}
+      <Dialog open={!!aiModal} onOpenChange={(o) => !o && setAiModal(null)}>
+        <DialogContent className="wide-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-800">
+              ✨ Generate Promotional Template with ChatGPT
+            </DialogTitle>
+            <DialogDescription>
+              OpenAI ChatGPT generates a customized retail promotional flyer template for <b>{aiModal?.business.name}</b>.
+            </DialogDescription>
+          </DialogHeader>
+          {aiModal && (
+            <form
+              className="form-stack"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setGeneratingAi(true);
+                try {
+                  const res = (await request("/api/admin", {
+                    action: "ai_template",
+                    businessId: aiModal.business.id,
+                    themePrompt: aiModal.themePrompt,
+                    category: aiModal.category,
+                  })) as { ok: boolean; template: Template; headlines?: { en: string; ar: string } };
+                  toast.success(`Template "${res.template.name}" generated and assigned!`);
+                  setAiModal(null);
+                  await load();
+                } catch (err) {
+                  toast.error((err as Error).message);
+                } finally {
+                  setGeneratingAi(false);
+                }
+              }}
+            >
+              <label className="field">
+                <span>Promotion Theme / Campaign</span>
+                <input
+                  required
+                  placeholder="e.g. Ramadan Mubarak Mega Deals, Weekend Seafood Festival, Clearance 50% Off..."
+                  value={aiModal.themePrompt}
+                  onChange={(e) => setAiModal({ ...aiModal, themePrompt: e.target.value })}
+                />
+              </label>
+
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <span className="text-[11px] text-slate-500 font-semibold w-full">Quick suggestions:</span>
+                {[
+                  "Weekend Supermarket Deals",
+                  "Ramadan Mubarak Special Deals",
+                  "Fresh Meat & Seafood Festival",
+                  "Mega Clearance Sale - Up to 70% Off",
+                  "Back To School Essentials",
+                  "Eid Al Adha Family Feast",
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => setAiModal({ ...aiModal, themePrompt: prompt })}
+                    className="text-[11px] px-2.5 py-1 rounded-full bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 border border-slate-200 transition"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+
+              <label className="field">
+                <span>Template Category</span>
+                <select
+                  className="select-control"
+                  value={aiModal.category}
+                  onChange={(e) => setAiModal({ ...aiModal, category: e.target.value })}
+                >
+                  <option value="Supermarket">Supermarket</option>
+                  <option value="Grocery">Grocery</option>
+                  <option value="Clearance">Clearance Sale</option>
+                  <option value="Weekend Sale">Weekend Sale</option>
+                  <option value="Ramadan">Ramadan</option>
+                  <option value="Eid">Eid</option>
+                  <option value="Seasonal">Seasonal</option>
+                  <option value="Gift Market">Gift Market</option>
+                </select>
+              </label>
+
+              <button
+                className="button primary"
+                disabled={generatingAi}
+                style={{ background: "#166534" }}
+              >
+                {generatingAi ? "Generating template with ChatGPT..." : "Generate & Assign Template"}
+              </button>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Credit Adjustment Dialog */}
+      <Dialog open={!!creditModal} onOpenChange={(o) => !o && setCreditModal(null)}>
+        <DialogContent className="app-dialog">
+          <DialogHeader>
+            <DialogTitle>Adjust Account AI Credits</DialogTitle>
+            <DialogDescription>
+              Add or deduct AI credits manually for a customer account.
+            </DialogDescription>
+          </DialogHeader>
+          {creditModal && (
+            <form
+              className="form-stack"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (
+                  await action({
+                    action: "adjust_credits",
+                    owner: creditModal.owner,
+                    delta: Number(creditModal.delta),
+                    reason: creditModal.reason,
+                  })
+                ) {
+                  setCreditModal(null);
+                }
+              }}
+            >
+              <label className="field">
+                <span>Account User ID / Owner</span>
+                <input
+                  required
+                  placeholder="Account ID (e.g. from users list or topup)"
+                  value={creditModal.owner}
+                  onChange={(e) => setCreditModal({ ...creditModal, owner: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>Credit Adjustment (+ to add, - to deduct)</span>
+                <input
+                  required
+                  type="number"
+                  min="-500"
+                  max="1000"
+                  value={creditModal.delta}
+                  onChange={(e) => setCreditModal({ ...creditModal, delta: Number(e.target.value) })}
+                />
+              </label>
+              <label className="field">
+                <span>Reason</span>
+                <input
+                  required
+                  maxLength={100}
+                  value={creditModal.reason}
+                  onChange={(e) => setCreditModal({ ...creditModal, reason: e.target.value })}
+                />
+              </label>
+              <button className="button primary" disabled={busy}>
+                Confirm Adjustment
               </button>
             </form>
           )}

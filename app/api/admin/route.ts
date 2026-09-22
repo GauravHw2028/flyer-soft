@@ -153,6 +153,70 @@ export async function POST(req: Request) {
       ]);
       return Response.json({ ok: true });
     }
+    if (b.action === "ai_template") {
+      const v = z
+        .object({
+          businessId: z.string(),
+          themePrompt: z.string().min(2).max(200),
+          category: z.string().optional(),
+        })
+        .safeParse(b);
+      if (!v.success)
+        return Response.json(
+          { error: "Provide a valid business ID and promotion theme prompt." },
+          { status: 400 },
+        );
+
+      const biz = await db()
+        .prepare("SELECT * FROM businesses WHERE id=?")
+        .bind(v.data.businessId)
+        .first<{ id: string; name: string; templates: string; email: string }>();
+      if (!biz) return Response.json({ error: "Business not found." }, { status: 404 });
+
+      const { generateTemplateWithAi } = await import("../../server/ai");
+      const generated = await generateTemplateWithAi({
+        businessName: biz.name,
+        themePrompt: v.data.themePrompt,
+        category: v.data.category,
+      });
+
+      const existingTemplates: unknown[] = JSON.parse(biz.templates || "[]");
+      const updatedTemplates = [generated.template, ...existingTemplates.slice(0, 19)];
+
+      await db()
+        .prepare("UPDATE businesses SET templates=? WHERE id=?")
+        .bind(JSON.stringify(updatedTemplates), biz.id)
+        .run();
+
+      return Response.json({
+        ok: true,
+        template: generated.template,
+        headlines: { en: generated.headlineEn, ar: generated.headlineAr },
+        promoBadge: generated.promoBadge,
+        marketingCopy: generated.marketingCopy,
+      });
+    }
+    if (b.action === "adjust_credits") {
+      const v = z
+        .object({
+          owner: z.string().min(1),
+          delta: z.number().int().min(-1000).max(1000),
+          reason: z.string().min(1).max(200),
+        })
+        .safeParse(b);
+      if (!v.success)
+        return Response.json({ error: "Invalid credit adjustment parameters." }, { status: 400 });
+
+      const now = new Date().toISOString();
+      const ledgerId = "admin:" + crypto.randomUUID();
+      await db()
+        .prepare("INSERT INTO credit_ledger (id, owner, delta, reason, created) VALUES (?, ?, ?, ?, ?)")
+        .bind(ledgerId, v.data.owner, v.data.delta, v.data.reason + " (by " + u.email + ")", now)
+        .run();
+
+      const newBal = await account(v.data.owner);
+      return Response.json({ ok: true, balance: newBal });
+    }
     return Response.json({ error: "Invalid admin action" }, { status: 400 });
   } catch (e) {
     return failure(e);
