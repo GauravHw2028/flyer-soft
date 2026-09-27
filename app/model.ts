@@ -247,6 +247,11 @@ export type ModernWorkspace = {
   campaigns: Campaign[];
   brand: Brand;
   customTemplates: Template[];
+  /**
+   * Which revision of the bundled sample library this workspace has already
+   * received. Older workspaces are topped up with the missing samples on read.
+   */
+  sampleLibrary?: string;
 };
 
 export type Campaign = {
@@ -434,13 +439,39 @@ export const defaultBrand: Brand = {
   ],
 };
 
+/**
+ * Bundled starter catalogue. Bump the version whenever entries are added so
+ * saved workspaces pick the new items up on their next load.
+ */
+export const SAMPLE_LIBRARY_VERSION = "v2";
+
 export const sampleProducts: Product[] = [
   ["bananas", "Fresh Bananas", "موز طازج", "1 kg", "Fruit", 7.95],
   ["apples", "Royal Gala Apples", "تفاح رويال جالا", "1 kg", "Fruit", 12.5],
-  ["tomatoes", "Vine Tomatoes", "طماطم معلقة", "1 kg", "Vegetables", 8.95],
-  ["avocado", "Ripe Hass Avocado", "أفوكادو هاس", "2 pieces", "Fruit", 14.95],
   ["oranges", "Sweet Navel Oranges", "برتقال أبو سرة", "1 kg", "Fruit", 9.95],
+  ["avocado", "Ripe Hass Avocado", "أفوكادو هاس", "2 pieces", "Fruit", 14.95],
+  ["tomatoes", "Vine Tomatoes", "طماطم معلقة", "1 kg", "Vegetables", 8.95],
   ["broccoli", "Fresh Green Broccoli", "بروكلي طازج", "500 g", "Vegetables", 10.5],
+  ["milk", "Full Fat Milk", "حليب كامل الدسم", "1 L", "Dairy", 6.75],
+  ["yogurt", "Greek Yogurt", "زبادي يوناني", "500 g", "Dairy", 8.5],
+  ["cheese", "Cheddar Cheese Block", "جبنة شيدر", "400 g", "Dairy", 18.95],
+  ["orange-juice", "Orange Juice", "عصير برتقال", "1 L", "Beverages", 9.75],
+  ["soft-drinks", "Assorted Soft Drinks", "مشروبات غازية", "6 x 1.5 L", "Beverages", 21],
+  ["water", "Mineral Water Pack", "مياه معدنية", "6 x 1.5 L", "Beverages", 12.5],
+  ["chips", "Potato Chips Assorted", "شيبس بطاطس", "170 g", "Snacks", 5.5],
+  ["cookies", "Chocolate Chip Cookies", "بسكويت بالشوكولاتة", "300 g", "Snacks", 7.25],
+  ["chocolate", "Milk Chocolate Bar", "شوكولاتة بالحليب", "100 g", "Snacks", 4.95],
+  ["coffee", "Instant Coffee Jar", "قهوة سريعة التحضير", "200 g", "Pantry", 24.95],
+  ["cooking-oil", "Sunflower Cooking Oil", "زيت دوار الشمس", "1.8 L", "Pantry", 16.5],
+  ["rice", "Basmati Rice", "أرز بسمتي", "5 kg", "Pantry", 32],
+  ["sugar", "White Sugar", "سكر أبيض", "1 kg", "Pantry", 4.25],
+  ["pasta", "Spaghetti Pasta", "معكرونة سباجيتي", "500 g", "Pantry", 3.75],
+  ["detergent", "Laundry Detergent", "منظف غسيل", "3 L", "Household", 27.5],
+  ["dish-soap", "Dishwashing Liquid", "سائل غسيل الأطباق", "1 L", "Household", 6.25],
+  ["tissues", "Facial Tissue Box", "مناديل ورقية", "5 boxes", "Household", 11.95],
+  ["shampoo", "Shampoo", "شامبو", "400 ml", "Personal Care", 14.75],
+  ["toothpaste", "Toothpaste", "معجون أسنان", "100 ml", "Personal Care", 8.95],
+  ["soap", "Antibacterial Soap", "صابون مضاد للبكتيريا", "4 x 100 g", "Personal Care", 7.5],
 ].map(([id, name, arabicName, pack, category, price]) => ({
   id: String(id),
   name: String(name),

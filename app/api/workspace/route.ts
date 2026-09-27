@@ -1,6 +1,7 @@
 import { assignedArtwork } from "../template-assets";
 import { owner, db, sameOrigin, failure } from "../_shared";
 import { workspaceSchema } from "../../validation";
+import { withSampleLibrary } from "../../sample-library";
 
 /**
  * The bundled sample photos were reshot as transparent PNGs so the grey studio
@@ -36,7 +37,7 @@ export async function GET() {
     return Response.json(
       row
         ? {
-            data: modernWorkspace(JSON.parse(row.data)),
+            data: withSampleLibrary(modernWorkspace(JSON.parse(row.data))),
             revision: row.revision,
           }
         : { data: null, revision: 0 },

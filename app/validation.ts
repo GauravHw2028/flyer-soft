@@ -292,6 +292,7 @@ export const workspaceSchema = z
     campaigns: z.array(campaignSchema).max(200),
     brand: brandSchema,
     customTemplates: z.array(templateSchema).max(100),
+    sampleLibrary: z.string().max(20).optional(),
   })
   .superRefine((v, c) => {
     for (const [k, a] of Object.entries({

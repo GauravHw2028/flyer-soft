@@ -1,4 +1,21 @@
-# Flyerly sample produce photo sources
+# Flyerly sample product image sources
+
+## Generated studio cutouts
+
+`milk`, `yogurt`, `cheese`, `orange-juice`, `soft-drinks`, `water`, `chips`,
+`cookies`, `chocolate`, `coffee`, `cooking-oil`, `rice`, `sugar`, `pasta`,
+`detergent`, `dish-soap`, `tissues`, `shampoo`, `toothpaste` and `soap` are
+AI-generated studio images created for this project with the built-in image
+generator, each on a transparent background. They show generic unbranded
+packaging, so there is no third-party trademark or stock licence attached.
+Regenerate or replace them by dropping a batch of transparent PNGs into a
+folder and running:
+
+```text
+python scripts/import-product-cutouts.py --source <folder-with-pngs>
+```
+
+## Produce photos
 
 All files are photographs downloaded from Unsplash at 900 px width and visually verified. License: https://unsplash.com/license permits commercial use, download, modification, and distribution without mandatory attribution. Do not resell the unmodified images or compile a competing stock-photo service.
 
