@@ -1,5 +1,6 @@
 "use client";
 
+import { discountGrid } from "../../app/grid-operations";
 import React, { useState } from "react";
 import {
   GridModel,
@@ -54,6 +55,10 @@ export function GridEditorControls({
     cols: number;
   } | null>(null);
 
+  const [discount, setDiscount] = useState("10");
+  const [discountScope, setDiscountScope] = useState<"selected" | "all">("selected");
+  const discountIds = grid.cells.filter(c => !c.hidden && c.product && (discountScope === "all" || selectedCellIds.includes(c.id))).map(c => c.id);
+  const validDiscount = discount.trim() !== "" && Number.isFinite(Number(discount)) && Number(discount) >= 0 && Number(discount) <= 100;
   const selectedCell = grid.cells.find((c) => selectedCellIds.includes(c.id));
   const isMultiSelected = selectedCellIds.length > 1;
 
@@ -68,8 +73,7 @@ export function GridEditorControls({
     const willLoseContent = grid.cells.some(
       (c) =>
         (c.row >= clampedRows || c.col >= clampedCols) &&
-        c.contentType !== "empty" &&
-        !c.hidden,
+        c.contentType !== "empty",
     );
 
     if (willLoseContent) {
@@ -86,7 +90,7 @@ export function GridEditorControls({
       for (let c = 0; c < newCols; c++) {
         const existing = grid.cells.find((cell) => cell.row === r && cell.col === c);
         if (existing) {
-          nextCells.push(existing);
+          nextCells.push({...existing, rowSpan: 1, colSpan: 1, hidden: false});
         } else {
           nextCells.push({
             id: `cell-${r}-${c}`,
@@ -113,12 +117,14 @@ export function GridEditorControls({
       cols: newCols,
       cells: nextCells,
     });
+    onSelectCells(selectedCellIds.filter(id => nextCells.some(c => c.id === id)));
     setPendingResize(null);
   }
 
   // Merge Cells
   const canMerge = (() => {
     if (selectedCellIds.length < 2) return false;
+    if (grid.cells.some(c => selectedCellIds.includes(c.id) && (c.hidden || c.rowSpan !== 1 || c.colSpan !== 1))) return false;
     const selected = grid.cells.filter((c) => selectedCellIds.includes(c.id));
     const minR = Math.min(...selected.map((c) => c.row));
     const maxR = Math.max(...selected.map((c) => c.row));
@@ -218,6 +224,13 @@ export function GridEditorControls({
 
   return (
     <div className="flex flex-col gap-5 text-sm">
+      <section className="discount-panel">
+        <h3>Bulk discount</h3><p>Reduce regular prices automatically. Applying again replaces the discount.</p>
+        <label>Apply to<select value={discountScope} onChange={e => setDiscountScope(e.target.value as "selected" | "all")}><option value="selected">Selected cells</option><option value="all">All products in this grid</option></select></label>
+        <label>Discount (%)<input type="number" min="0" max="100" step="0.1" value={discount} onChange={e => setDiscount(e.target.value)} /></label>
+        <button type="button" disabled={!validDiscount || !discountIds.length} onClick={() => onChange(discountGrid(grid, discountIds, Number(discount)))}>Apply to {discountIds.length} products</button>
+        {!validDiscount && <p role="alert">Enter a value from 0 to 100.</p>}
+      </section>
       {/* Grid Dimensions Controls */}
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-4">
         <div className="flex items-center justify-between">

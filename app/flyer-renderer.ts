@@ -1,4 +1,5 @@
 import {
+  templates,
   FlyerPage,
   FlyerSection,
   GridModel,
@@ -42,7 +43,7 @@ export function renderSvgText(
   } = {},
 ) {
   const isAr = options.rtl ?? hasArabic(text);
-  const anchor = options.anchor ?? (isAr ? "end" : "start");
+  const anchor = options.anchor ?? "start";
   const fill = options.color || "#1e293b";
   const size = options.size || 14;
   const weight = options.weight || 600;
@@ -51,6 +52,11 @@ export function renderSvgText(
   return `<text x="${x}" y="${y}" font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="${anchor}" font-family="${family}"${
     isAr ? ' direction="rtl"' : ""
   }>${esc(text)}</text>`;
+}
+
+export function fitText(text: string, width: number, size: number): string {
+  const max = Math.max(1, Math.floor(width / (size * .66)));
+  return text.length > max ? text.slice(0, Math.max(0, max - 1)).trimEnd() + "…" : text;
 }
 
 export function resolveBrand(brand?: Brand | BusinessProfile) {
@@ -78,13 +84,16 @@ export function renderPageSvg(
   options: {
     interactive?: boolean;
     selectedCellId?: string | null;
+    selectedCellIds?: string[];
+    selectedGridId?: string | null;
     selectedSectionId?: string | null;
     images?: Record<string, string>;
     pageNumber?: number;
     totalPages?: number;
   } = {},
 ): string {
-  const brand = resolveBrand(brandInput);
+  const palette = templates.find(t => t.id === page.templateId);
+  const brand = { ...resolveBrand(brandInput), ...(palette ? {primaryColor: palette.color, accentColor: palette.accent} : {}) };
   const images = options.images || {};
   const logoHref = images[brand.logo] || brand.logo;
 
@@ -107,7 +116,7 @@ export function renderPageSvg(
     bgFill = `url(#page-bg-${page.id})`;
   }
 
-  let defs = bgGradientDef;
+  const defs = bgGradientDef;
   let body = `<rect width="${PAGE_W}" height="${PAGE_H}" fill="${bgFill}"/>`;
 
   if (bg?.type === "image" && bg.imageUrl) {
@@ -138,9 +147,12 @@ export function renderPageSvg(
 
   const gridSections = page.sections.filter((s) => s.type === "grid");
   const defaultGridHeight = gridSections.length > 0
-    ? Math.max(300, (availableH - fixedSectionHeights - 20) / gridSections.length)
+    ? Math.max(80, (availableH - fixedSectionHeights - 28 - page.sections.filter(s => s.type !== "footer").length * 12) / gridSections.length)
     : 450;
 
+  const backdrop = body;
+  body = "";
+  let footerMarkup = "";
   for (let sIdx = 0; sIdx < page.sections.length; sIdx++) {
     const sec = page.sections[sIdx];
     const isSelectedSec = options.interactive && options.selectedSectionId === sec.id;
@@ -251,13 +263,14 @@ export function renderPageSvg(
         height: gridH,
         interactive: options.interactive,
         selectedCellId: options.selectedCellId,
+        selectedCellIds: !options.selectedGridId || options.selectedGridId === sec.grid.id ? options.selectedCellIds : [],
         isSelectedSec,
       });
       currentY += gridH + 12;
     } else if (sec.type === "footer") {
       const footH = 65;
       const footY = PAGE_H - footH - 12;
-      body += renderFooterSection({
+      footerMarkup += renderFooterSection({
         sec,
         brand,
         logoHref,
@@ -270,6 +283,9 @@ export function renderPageSvg(
       });
     }
   }
+
+  const contentScale = Math.min(1, (PAGE_H - (hasFooter ? 100 : 28)) / Math.max(1, currentY));
+  body = backdrop + `<g transform="translate(${(PAGE_W * (1 - contentScale)) / 2} 0) scale(${contentScale})">${body}</g>` + footerMarkup;
 
   // Page pagination indicator
   if (options.pageNumber && options.totalPages && options.totalPages > 1) {
@@ -302,110 +318,28 @@ function renderHeroSection(p: {
   isSelected?: boolean;
 }) {
   const { sec, brand, logoHref, x, y, width, height, interactive, isSelected } = p;
-  const primary = brand.primaryColor;
+  const primary = sec.background?.color || brand.primaryColor;
   const accent = brand.accentColor;
-
-  let s = `<g data-section-id="${sec.id}">`;
-
-  // Hero Card background
-  s += `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="12" fill="${primary}" filter="drop-shadow(0 4px 10px rgba(0,0,0,0.12))"/>`;
-
-  // Subtle decorative gloss
-  s += `<ellipse cx="${x + width * 0.75}" cy="${y + 50}" rx="${width * 0.4}" ry="90" fill="${accent}" fill-opacity="0.18"/>`;
-
-  // Top masthead bar inside hero
-  const topBarH = 62;
-  s += `<rect x="${x}" y="${y}" width="${width}" height="${topBarH}" rx="12" fill="rgba(0,0,0,0.15)"/>`;
-
-  // Dynamic Logo or Monogram
-  if (logoHref) {
-    s += `<image href="${esc(logoHref)}" x="${x + 16}" y="${y + 10}" width="54" height="42" preserveAspectRatio="xMidYMid meet"/>`;
-  } else {
-    s += `<rect x="${x + 16}" y="${y + 11}" width="42" height="40" rx="8" fill="#ffffff"/>`;
-    s += `<text x="${x + 37}" y="${y + 36}" font-size="22" font-weight="900" fill="${primary}" text-anchor="middle">${esc(
-      brand.name.charAt(0).toUpperCase(),
-    )}</text>`;
-  }
-
-  // Store Brand Name (English)
-  const brandX = logoHref ? x + 78 : x + 66;
-  s += renderSvgText(brand.name.toUpperCase(), brandX, y + 36, {
-    size: 20,
-    weight: 900,
-    color: "#ffffff",
-  });
-
-  // Store Arabic Brand Name (RTL)
-  if (brand.arabicName) {
-    s += renderSvgText(brand.arabicName, x + width - 18, y + 36, {
-      size: 20,
-      weight: 800,
-      color: accent,
-      rtl: true,
-    });
-  } else {
-    s += renderSvgText("عروض خاصة", x + width - 18, y + 36, {
-      size: 16,
-      weight: 800,
-      color: accent,
-      rtl: true,
-    });
-  }
-
-  // Main Promotional Headline
-  const headline = sec.title || "FRESH PICKS · BIG SAVINGS";
-  const headlineSize = clamp(24, Math.floor(width / Math.max(headline.length * 0.52, 10)), 44);
-  const headlineY = sec.arabicTitle ? y + 115 : y + 135;
-  s += `<text x="${x + width / 2}" y="${headlineY}" font-size="${headlineSize}" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="-0.5">${esc(
-    headline,
-  )}</text>`;
-
-  if (sec.arabicTitle) {
-    s += renderSvgText(sec.arabicTitle, x + width / 2, headlineY + 32, {
-      size: Math.min(headlineSize, 26),
-      weight: 800,
-      color: accent,
-      anchor: "middle",
-      rtl: true,
-    });
-  }
-
-  // Promotional Subtitle
-  const sub = sec.subtitle || "Offers valid across all branches while stocks last";
-  const subY = sec.arabicTitle ? headlineY + 54 : y + 172;
-  s += renderSvgText(sub, x + width / 2, subY, {
-    size: 13,
-    weight: 600,
-    color: "#ffffff",
-    anchor: "middle",
-  });
-
-  // Yellow Offer Band at bottom of hero
-  const bandH = 44;
-  const bandY = y + height - bandH;
-  s += `<path d="M ${x} ${bandY} L ${x + width} ${bandY} L ${x + width} ${y + height - 12} Q ${x + width} ${y + height} ${x + width - 12} ${y + height} L ${x + 12} ${y + height} Q ${x} ${y + height} ${x} ${y + height - 12} Z" fill="${accent}"/>`;
-
-  const badgeText = sec.badge || "WEEKLY SPECIAL OFFERS";
-  s += renderSvgText(badgeText, x + 20, bandY + 28, {
-    size: 14,
-    weight: 900,
-    color: primary,
-  });
-
-  s += renderSvgText(`PRICES IN ${brand.currency} · أفضل الأسعار`, x + width - 20, bandY + 28, {
-    size: 12,
-    weight: 800,
-    color: primary,
-    anchor: "end",
-    rtl: true,
-  });
-
-  if (interactive && isSelected) {
-    s += `<rect x="${x - 3}" y="${y - 3}" width="${width + 6}" height="${height + 6}" rx="15" fill="none" stroke="#2563eb" stroke-width="3" stroke-dasharray="6 4" pointer-events="none"/>`;
-  }
-
+  const id = `hero-${sec.id}`;
+  let s = `<g data-section-id="${sec.id}"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${primary}"/><stop offset="1" stop-color="${shade(primary, -12)}"/></linearGradient><clipPath id="${id}-clip"><rect x="${x}" y="${y}" width="${width}" height="${height}" rx="16"/></clipPath></defs><g clip-path="url(#${id}-clip)">`;
+  s += `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="url(#${id})"/>`;
+  s += `<circle cx="${x + width * .94}" cy="${y + height * .5}" r="${height * .85}" fill="${accent}" opacity=".09"/><circle cx="${x + width * .94}" cy="${y + height * .5}" r="${height * .6}" fill="none" stroke="${accent}" stroke-width="1" opacity=".25"/>`;
+  if (logoHref) s += `<image href="${esc(logoHref)}" x="${x + 22}" y="${y + 16}" width="40" height="36" preserveAspectRatio="xMidYMid meet"/>`;
+  const brandX = x + (logoHref ? 76 : 24);
+  s += renderSvgText(fitText(brand.name.toUpperCase(), width * .49, 18), brandX, y + height * .14, {size: 18, weight: 800, color: "#ffffff"});
+  if (brand.arabicName) s += renderSvgText(fitText(brand.arabicName, width * .36, 18), x + width - 24, y + height * .14, {size: 18, color: "#ffffff", rtl: true});
+  s += `<line x1="${x + 24}" x2="${x + width - 24}" y1="${y + height * .22}" y2="${y + height * .22}" stroke="#ffffff" opacity=".2"/>`;
+  const headline = sec.title || "FRESH FINDS. BIG SAVINGS.";
+  const size = Math.min(46, height * .17, (width - 56) / Math.max(1, headline.length * .64));
+  s += renderSvgText(headline, x + 26, y + height * .47, {size, weight: 900, color: "#ffffff"});
+  if (sec.arabicTitle) s += renderSvgText(fitText(sec.arabicTitle, width - 52, 21), x + width - 26, y + height * .6, {size: 21, color: accent, rtl: true});
+  s += renderSvgText(fitText(sec.subtitle || "Fresh offers. Exceptional everyday value.", width - 52, 13), x + 26, y + height * .72, {size: 13, color: "#ffffff", weight: 500});
+  s += `<rect x="${x}" y="${y + height * .83}" width="${width}" height="${height * .17}" fill="${accent}"/>`;
+  s += renderSvgText(fitText(sec.badge || "WEEKLY SPECIAL OFFERS", width * .58, 13), x + 26, y + height * .94, {size: 13, weight: 900, color: primary});
+  s += renderSvgText(`PRICES IN ${brand.currency}`, x + width - 26, y + height * .94, {size: 11, weight: 700, color: primary, anchor: "end"});
   s += `</g>`;
-  return s;
+  if (interactive && isSelected) s += `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="16" fill="none" stroke="#2563eb" stroke-width="3" pointer-events="none"/>`;
+  return s + `</g>`;
 }
 
 function renderBannerSection(p: {
@@ -428,7 +362,7 @@ function renderBannerSection(p: {
   // Badge pill
   const badge = sec.badge || "CLEARANCE SALE";
   s += `<rect x="${x + 16}" y="${y + 14}" width="150" height="28" rx="6" fill="${accent}"/>`;
-  s += renderSvgText(badge, x + 91, y + 33, {
+  s += renderSvgText(fitText(badge, 132, 12), x + 91, y + 33, {
     size: 12,
     weight: 900,
     color: "#0f172a",
@@ -437,7 +371,7 @@ function renderBannerSection(p: {
 
   // Title
   const title = sec.title || "UP TO 50% OFF ON SELECTED ITEMS";
-  s += renderSvgText(title, x + 180, y + 35, {
+  s += renderSvgText(fitText(title, width - 198, 18), x + 180, y + 35, {
     size: 18,
     weight: 900,
     color: "#ffffff",
@@ -445,7 +379,7 @@ function renderBannerSection(p: {
 
   // Subtitle
   const sub = sec.subtitle || "Limited time promotional deals. Hurry while stocks last!";
-  s += renderSvgText(sub, x + 16, y + 68, {
+  s += renderSvgText(fitText(sub, width - 32, 12), x + 16, y + 68, {
     size: 12,
     weight: 500,
     color: "#f1f5f9",
@@ -476,15 +410,15 @@ function renderSpecialOfferSection(p: {
   // Banner strip
   s += `<rect x="${x}" y="${y}" width="${width}" height="42" rx="10" fill="${brand.primaryColor}"/>`;
   const mainTitle = sec.title || "SPECIAL PROMOTIONAL OFFER";
-  s += renderSvgText(mainTitle, x + 16, y + 26, {
+  s += renderSvgText(fitText(mainTitle, width - 170, 15), x + 16, y + 19, {
     size: 15,
     weight: 900,
     color: "#ffffff",
   });
 
   if (sec.subtitle) {
-    s += renderSvgText(`- ${sec.subtitle}`, x + 24 + mainTitle.length * 8.5, y + 26, {
-      size: 12,
+    s += renderSvgText(fitText(sec.subtitle, width - 170, 10), x + 16, y + 34, {
+      size: 10,
       weight: 700,
       color: brand.accentColor,
     });
@@ -492,7 +426,7 @@ function renderSpecialOfferSection(p: {
 
   if (sec.badge) {
     s += `<rect x="${x + width - 140}" y="${y + 8}" width="124" height="26" rx="6" fill="${brand.accentColor}"/>`;
-    s += renderSvgText(sec.badge, x + width - 78, y + 25, {
+    s += renderSvgText(fitText(sec.badge, 112, 11), x + width - 78, y + 25, {
       size: 11,
       weight: 900,
       color: "#0f172a",
@@ -560,7 +494,7 @@ function renderHighlightSection(p: {
   const rightX = x + imgW + 28;
   const badgeText = sec.badge || sec.highlight?.badge || "SUPER DEAL OF THE DAY";
   s += `<rect x="${rightX}" y="${y + 20}" width="180" height="26" rx="6" fill="${brand.primaryColor}"/>`;
-  s += renderSvgText(badgeText, rightX + 90, y + 37, {
+  s += renderSvgText(fitText(badgeText, 164, 11), rightX + 90, y + 37, {
     size: 11,
     weight: 900,
     color: "#ffffff",
@@ -568,14 +502,14 @@ function renderHighlightSection(p: {
   });
 
   const name = prod?.name || sec.title || "Featured Premium Product";
-  s += renderSvgText(name, rightX, y + 80, {
+  s += renderSvgText(fitText(name, width - imgW - 44, 20), rightX, y + 80, {
     size: 20,
     weight: 800,
     color: "#0f172a",
   });
 
   if (prod?.arabicName) {
-    s += renderSvgText(prod.arabicName, rightX, y + 106, {
+    s += renderSvgText(fitText(prod.arabicName, width - imgW - 44, 18), x + width - 16, y + 106, {
       size: 18,
       weight: 700,
       color: "#475569",
@@ -587,10 +521,10 @@ function renderHighlightSection(p: {
   const newP = prod ? prod.offer : 19.99;
   const oldP = prod?.price;
   s += `<g transform="translate(${rightX} ${y + 130})">`;
-  if (oldP && oldP > newP) {
+  if (prod?.showOldPrice !== false && oldP && oldP > newP) {
     s += `<text x="0" y="24" font-size="16" fill="#94a3b8" text-decoration="line-through">${brand.currency} ${oldP.toFixed(2)}</text>`;
   }
-  s += `<text x="${oldP && oldP > newP ? 130 : 0}" y="32" font-size="34" font-weight="900" fill="${brand.primaryColor}">${brand.currency} ${newP.toFixed(2)}</text>`;
+  s += renderSvgText(`${brand.currency} ${newP.toFixed(2)}`, 0, 62, {size: Math.min(34, (width - imgW - 44) / ((brand.currency.length + newP.toFixed(2).length + 1) * .68)), weight: 900, color: brand.primaryColor});
   s += `</g>`;
 
   if (interactive && isSelected) {
@@ -628,13 +562,13 @@ function renderQrLocationSection(p: {
   });
 
   const branchText = brand.branches?.[0]?.address || "Available in Dubai, Abu Dhabi & Al Ain branches";
-  s += renderSvgText(branchText, textX, y + 50, {
+  s += renderSvgText(fitText(branchText, width - qrSize - 36, 12), textX, y + 50, {
     size: 12,
     weight: 500,
     color: "#334155",
   });
 
-  s += renderSvgText(`Phone: ${brand.phone || "+971 4 123 4567"} · Timings: ${brand.timings}`, textX, y + 70, {
+  s += renderSvgText(fitText(`Phone: ${brand.phone} · Timings: ${brand.timings}`, width - qrSize - 36, 11), textX, y + 70, {
     size: 11,
     weight: 600,
     color: "#64748b",
@@ -659,12 +593,13 @@ function renderTextSection(p: {
   const { sec, x, y, width, height, interactive, isSelected } = p;
   const text = sec.textBlock?.content || sec.title || "Promotional Announcement";
   const align = sec.textBlock?.align || "center";
-  const anchor = align === "center" ? "middle" : align === "right" ? "end" : "start";
+  const rtl = hasArabic(text);
+  const anchor = align === "center" ? "middle" : (align === "right") !== rtl ? "end" : "start";
   const textX = align === "center" ? x + width / 2 : align === "right" ? x + width - 16 : x + 16;
 
   let s = `<g data-section-id="${sec.id}">`;
   s += `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="6" fill="#f8fafc" stroke="#e2e8e1"/>`;
-  s += renderSvgText(text, textX, y + height / 2 + 5, {
+  s += renderSvgText(fitText(text, width - 32, sec.textBlock?.size || 15), textX, y + height / 2 + 5, {
     size: sec.textBlock?.size || 15,
     weight: sec.textBlock?.weight || 700,
     color: sec.textBlock?.color || "#1e293b",
@@ -730,7 +665,7 @@ function renderFooterSection(p: {
     s += `<image href="${esc(logoHref)}" x="${x + 12}" y="${y + 12}" width="40" height="40" preserveAspectRatio="xMidYMid meet"/>`;
   }
   const textX = logoHref ? x + 62 : x + 16;
-  s += renderSvgText(brand.name, textX, y + 26, {
+  s += renderSvgText(fitText(brand.name, width * .42, 14), textX, y + 26, {
     size: 14,
     weight: 900,
     color: "#ffffff",
@@ -739,7 +674,7 @@ function renderFooterSection(p: {
   const branchSummary = brand.branches?.length
     ? brand.branches.map((b) => b.name).join(" · ")
     : "Dubai · Abu Dhabi · Al Ain";
-  s += renderSvgText(branchSummary, textX, y + 46, {
+  s += renderSvgText(fitText(branchSummary, width * .42, 11), textX, y + 46, {
     size: 11,
     weight: 600,
     color: brand.accentColor,
@@ -747,7 +682,7 @@ function renderFooterSection(p: {
 
   // Terms and disclaimer on right
   const custom = sec.footer?.customText || brand.terms;
-  s += renderSvgText(custom, x + width - 16, y + 36, {
+  s += renderSvgText(fitText(custom, width * .46, 10), x + width - 16, y + 36, {
     size: 10,
     weight: 500,
     color: "#ffffff",
@@ -772,6 +707,7 @@ function renderGridSection(p: {
   height: number;
   interactive?: boolean;
   selectedCellId?: string | null;
+  selectedCellIds?: string[];
   isSelectedSec?: boolean;
 }) {
   const { grid, secId, brand, images, x, y, width, height, interactive, selectedCellId, isSelectedSec } = p;
@@ -808,7 +744,7 @@ function renderGridSection(p: {
     const actualW = cSpan * cellW + (cSpan - 1) * gap;
     const actualH = rSpan * cellH + (rSpan - 1) * gap;
 
-    const isCellSelected = interactive && selectedCellId === cell.id;
+    const isCellSelected = interactive && (p.selectedCellIds ? p.selectedCellIds.includes(cell.id) : selectedCellId === cell.id);
 
     s += renderCell({
       cell,
@@ -888,14 +824,14 @@ function renderCell(p: {
     });
   } else if (cell.contentType === "banner" && cell.banner) {
     s += `<rect x="${x + 4}" y="${y + 4}" width="${width - 8}" height="${height - 8}" rx="6" fill="${cell.banner.bg || brand.primaryColor}"/>`;
-    s += renderSvgText(cell.banner.title, x + width / 2, y + height / 2 - 4, {
+    s += renderSvgText(fitText(cell.banner.title, width - 16, clamp(12, width * 0.08, 20)), x + width / 2, y + height / 2 - 4, {
       size: clamp(12, width * 0.08, 20),
       weight: 900,
       color: cell.banner.textColor || "#ffffff",
       anchor: "middle",
     });
     if (cell.banner.subtitle) {
-      s += renderSvgText(cell.banner.subtitle, x + width / 2, y + height / 2 + 16, {
+      s += renderSvgText(fitText(cell.banner.subtitle, width - 16, clamp(9, width * 0.05, 13)), x + width / 2, y + height / 2 + 16, {
         size: clamp(9, width * 0.05, 13),
         weight: 600,
         color: brand.accentColor,
@@ -904,9 +840,10 @@ function renderCell(p: {
     }
   } else if (cell.contentType === "text" && cell.text) {
     const align = cell.text.align || "center";
-    const anchor = align === "center" ? "middle" : align === "right" ? "end" : "start";
+    const rtl = hasArabic(cell.text.content);
+    const anchor = align === "center" ? "middle" : (align === "right") !== rtl ? "end" : "start";
     const textX = align === "center" ? x + width / 2 : align === "right" ? x + width - 8 : x + 8;
-    s += renderSvgText(cell.text.content, textX, y + height / 2 + 5, {
+    s += renderSvgText(fitText(cell.text.content, width - 16, cell.text.size || 13), textX, y + height / 2 + 5, {
       size: cell.text.size || 13,
       weight: cell.text.weight || 600,
       color: cell.text.color || "#1e293b",
@@ -949,96 +886,32 @@ export function renderProductCard(p: {
     return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="6" fill="#f8fafc" stroke="#e2e8e1" stroke-dasharray="4 4"/>`;
   }
 
-  let s = `<g data-product-id="${offer.id}">`;
-
-  // Card Background
-  s += `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="6" fill="#ffffff"/>`;
-
-  // Layout calculations
-  const pad = 6;
+  const pad = Math.max(3, Math.min(10, width * .045));
   const innerW = width - pad * 2;
-
-  // Image height is roughly 48% of card height
-  const imgH = clamp(36, height * 0.48, height - 60);
-  const imgY = y + pad;
-
-  // Image container with soft backdrop
-  s += `<rect x="${x + pad}" y="${imgY}" width="${innerW}" height="${imgH}" rx="4" fill="#fafaf9"/>`;
-
-  if (offer.image) {
-    const url = images[offer.image] || offer.image;
-    s += `<image href="${esc(url)}" x="${x + pad + 2}" y="${imgY + 2}" width="${innerW - 4}" height="${imgH - 4}" preserveAspectRatio="xMidYMid meet" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.08))"/>`;
+  const unit = Math.max(2, Math.min(14, width / 15, height / 17));
+  const imageH = Math.max(8, height - unit * 7.3 - pad * 2);
+  const textY = y + pad + imageH + unit * 1.25;
+  const clip = `card-${esc(offer.id)}-${x}-${y}`;
+  let s = `<g data-product-id="${esc(offer.id)}"><defs><clipPath id="${clip}"><rect x="${x}" y="${y}" width="${width}" height="${height}" rx="8"/></clipPath></defs><g clip-path="url(#${clip})">`;
+  s += `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="8" fill="#ffffff"/>`;
+  s += `<rect x="${x + pad}" y="${y + pad}" width="${innerW}" height="${imageH}" rx="6" fill="#f5f7f3"/>`;
+  if (offer.image) s += `<image href="${esc(images[offer.image] || offer.image)}" x="${x + pad * 2}" y="${y + pad * 2}" width="${Math.max(1, innerW - pad * 2)}" height="${Math.max(1, imageH - pad * 2)}" preserveAspectRatio="xMidYMid meet"/>`;
+  const discount = offer.price > offer.offer ? Math.round((1 - offer.offer / offer.price) * 100) : 0;
+  const badge = offer.badge || (discount > 0 ? `-${discount}%` : "");
+  if (badge) {
+    const badgeW = Math.min(innerW * .65, unit * 7);
+    s += `<rect x="${x + pad}" y="${y + pad}" width="${badgeW}" height="${unit * 1.8}" rx="4" fill="${brandColor}"/>`;
+    s += renderSvgText(fitText(badge, badgeW - 6, unit * .85), x + pad + badgeW / 2, y + pad + unit * 1.22, {size: unit * .85, weight: 800, color: "#ffffff", anchor: "middle"});
   }
-
-  // Discount badge calculation if old price > offer price
-  let badgeText = offer.badge;
-  if (!badgeText && offer.price && offer.price > offer.offer) {
-    const discount = Math.round(((offer.price - offer.offer) / offer.price) * 100);
-    if (discount > 0) badgeText = `-${discount}%`;
+  s += renderSvgText(fitText(offer.name, innerW, unit), x + pad, textY, {size: unit, weight: 700});
+  if (offer.arabicName) s += renderSvgText(fitText(offer.arabicName, innerW, unit * .9), x + width - pad, textY + unit * 1.25, {size: unit * .9, color: "#64748b", rtl: true});
+  s += renderSvgText(fitText(offer.pack || "", innerW * .45, unit * .8), x + pad, y + height - unit * 4.1, {size: unit * .8, color: "#64748b"});
+  if (offer.showOldPrice !== false && offer.price > offer.offer) {
+    s += `<text x="${x + width - pad}" y="${y + height - unit * 4.1}" text-anchor="end" font-size="${unit * .85}" fill="#64748b" text-decoration="line-through">${esc(currency)} ${offer.price.toFixed(2)}</text>`;
   }
-
-  if (badgeText) {
-    const bW = clamp(40, width * 0.35, 62);
-    const bH = 20;
-    s += `<rect x="${x + pad + 4}" y="${imgY + 4}" width="${bW}" height="${bH}" rx="4" fill="#dc2626"/>`;
-    s += renderSvgText(badgeText, x + pad + 4 + bW / 2, imgY + 18, {
-      size: 11,
-      weight: 900,
-      color: "#ffffff",
-      anchor: "middle",
-    });
-  }
-
-  // Pack badge if exists (e.g. "1 kg")
-  if (offer.pack) {
-    const packW = clamp(36, width * 0.32, 54);
-    s += `<rect x="${x + width - pad - packW - 4}" y="${imgY + 4}" width="${packW}" height="18" rx="3" fill="rgba(255,255,255,0.92)" stroke="#e2e8e1"/>`;
-    s += renderSvgText(offer.pack, x + width - pad - packW / 2 - 4, imgY + 16, {
-      size: 9,
-      weight: 700,
-      color: "#475569",
-      anchor: "middle",
-    });
-  }
-
-  // Text content area
-  const textAreaY = imgY + imgH + 12;
-  const nameSize = clamp(9, Math.min(width * 0.075, 14), 15);
-
-  // English Product Name
-  s += renderSvgText(offer.name.slice(0, 32), x + pad, textAreaY, {
-    size: nameSize,
-    weight: 700,
-    color: "#0f172a",
-  });
-
-  // Arabic Product Name (if available)
-  if (offer.arabicName) {
-    s += renderSvgText(offer.arabicName.slice(0, 32), x + width - pad, textAreaY + 14, {
-      size: nameSize - 1,
-      weight: 600,
-      color: "#64748b",
-      rtl: true,
-    });
-  }
-
-  // Price Roundel / Block at bottom
-  const priceY = y + height - 8;
-  const priceSize = clamp(15, Math.min(width * 0.16, 26), 30);
-
-  // Old price (strike-through)
-  const showOld = offer.showOldPrice !== false && offer.price > offer.offer;
-  if (showOld) {
-    s += `<text x="${x + pad}" y="${priceY - 3}" font-size="11" font-weight="600" fill="#94a3b8" text-decoration="line-through">${currency} ${offer.price.toFixed(
-      2,
-    )}</text>`;
-  }
-
-  // New selling price in striking brand color
-  s += `<text x="${x + width - pad}" y="${priceY}" font-size="${priceSize}" font-weight="900" fill="${brandColor}" text-anchor="end">${currency} <tspan font-size="${priceSize * 1.1}">${offer.offer.toFixed(
-    2,
-  )}</tspan></text>`;
-
-  s += `</g>`;
-  return s;
+  s += `<rect x="${x + pad}" y="${y + height - unit * 2.7}" width="${innerW}" height="${unit * 2.4}" rx="5" fill="${esc(accentColor)}" opacity=".28"/>`;
+  const price = `${currency} ${offer.offer.toFixed(2)}`;
+  const priceSize = Math.min(unit * 1.9, innerW / (price.length * .68));
+  s += renderSvgText(price, x + width - pad * 1.6, y + height - unit * .9, {size: priceSize, weight: 900, color: brandColor, anchor: "end"});
+  return s + `</g></g>`;
 }

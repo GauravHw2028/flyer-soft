@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   templates,
+  createDefaultPage,
   sampleProducts,
   defaultBrand,
   newFlyer,
@@ -20,10 +21,12 @@ import {
   BusinessRecord,
   BusinessProfile,
   brandToBusinessProfile,
+  businessProfileToBrand,
   defaultBackgroundPresets,
 } from "./model";
 import { useWorkspace } from "./use-workspace";
 import { exportFlyer, campaignIssues, downloadBlob } from "./flyer";
+import { selectGridCells } from "./grid-operations";
 import { renderPageSvg } from "./flyer-renderer";
 import {
   useBusiness,
@@ -125,7 +128,11 @@ export default function Studio({ account }: { account: SessionAccount }) {
 
   // Active Page & Selection state
   const [activePageIndex, setActivePageIndex] = useState(0);
-  const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
+  const [selectedCellIds, setSelectedCellIds] = useState<string[]>([]);
+  const selectedCellId = selectedCellIds[0] || null;
+  const setSelectedCellId = (id: string | null) => setSelectedCellIds(id ? [id] : []);
+  const [multiSelect, setMultiSelect] = useState(false);
+  const [selectedGridId, setSelectedGridId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
 
   // Navigation tabs
@@ -240,6 +247,7 @@ export default function Studio({ account }: { account: SessionAccount }) {
     setActivePageIndex(0);
     setSelectedCellId(null);
     setSelectedSectionId(null);
+    setUndoStack([]); setRedoStack([]);
     toast.success("Switched business context");
   }
 
@@ -299,7 +307,7 @@ export default function Studio({ account }: { account: SessionAccount }) {
     setExporting(true);
     setDownloadInfo(null);
     try {
-      const legacyCampaign = flyerToCampaign(currentFlyer);
+      const legacyCampaign = flyerToCampaign({...currentFlyer, brand: businessProfileToBrand(activeBusiness.profile)});
       const t = templates.find((x) => x.id === activePage?.templateId) || templates[0];
       const result = await exportFlyer(legacyCampaign, t, format, clampedPageIndex);
 
@@ -322,7 +330,11 @@ export default function Studio({ account }: { account: SessionAccount }) {
     if (cellTarget) {
       const cellId = cellTarget.getAttribute("data-cell-target") || cellTarget.getAttribute("data-cell-id");
       if (cellId) {
-        setSelectedCellId(cellId);
+        const gridId = cellTarget.closest("[data-grid-id]")?.getAttribute("data-grid-id");
+        const grid = activePage.sections.find(s => s.grid?.id === gridId)?.grid;
+        if (!grid) return;
+        setSelectedGridId(grid.id);
+        setSelectedCellIds(previous => selectGridCells(grid, grid.id === activeGrid?.id ? previous : [], cellId, multiSelect || e.ctrlKey || e.metaKey, e.shiftKey));
         setSelectedSectionId(null);
         return;
       }
@@ -344,11 +356,8 @@ export default function Studio({ account }: { account: SessionAccount }) {
   }
 
   // Find currently active grid and selected cell
-  const activeGrid = useMemo(() => {
-    if (!activePage) return null;
-    const secWithGrid = activePage.sections.find((s) => s.type === "grid" && s.grid);
-    return secWithGrid?.grid || null;
-  }, [activePage]);
+  const activeGrid = (activePage?.sections.find(s => s.grid?.id === selectedGridId)
+    || activePage?.sections.find(s => s.type === "grid" && s.grid))?.grid || null;
 
   const selectedCell = useMemo(() => {
     if (!activeGrid || !selectedCellId) return null;
@@ -422,13 +431,14 @@ export default function Studio({ account }: { account: SessionAccount }) {
     if (!activePage) return "";
     return renderPageSvg(activePage, activeBusiness.profile || defaultBrand, {
       interactive: true,
-      selectedCellId,
+      selectedCellIds,
+      selectedGridId: activeGrid?.id,
       selectedSectionId,
     });
-  }, [activePage, activeBusiness.profile, selectedCellId, selectedSectionId]);
+  }, [activePage, activeBusiness.profile, selectedCellIds, activeGrid, selectedSectionId]);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 font-sans text-slate-800">
+    <div className="flyer-editor flex flex-col h-screen w-full overflow-hidden bg-slate-100 font-sans text-slate-800">
       {/* Top Navbar */}
       <header className="h-14 border-b border-slate-200 bg-white px-4 flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-4">
@@ -598,7 +608,7 @@ export default function Studio({ account }: { account: SessionAccount }) {
       )}
 
       {/* Main Body (Canva Style: Left Navigation Tabs, Center Canvas, Right Contextual Inspector) */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="editor-body flex-1 flex min-h-0 overflow-hidden">
         {/* Left Side Icon Strip */}
         <aside className="w-16 bg-white border-r border-slate-200 flex flex-col items-center py-3 gap-3 shrink-0 z-10">
           <button
@@ -614,6 +624,7 @@ export default function Studio({ account }: { account: SessionAccount }) {
             <span>Design</span>
           </button>
 
+          <button type="button" onClick={() => setActiveTab("templates")} className="w-11 h-14 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-50"><Palette size={18}/><span>Themes</span></button>
           <button
             type="button"
             onClick={() => setActiveTab("pages")}
@@ -669,7 +680,18 @@ export default function Studio({ account }: { account: SessionAccount }) {
 
         {/* Left Auxiliary Panel (Based on active tab) */}
         {activeTab !== "editor" && (
-          <aside className="w-80 bg-white border-r border-slate-200 flex flex-col p-4 overflow-y-auto shrink-0 animate-in slide-in-from-left-4 duration-150">
+          <aside className="editor-library w-80 bg-white border-r border-slate-200 flex flex-col p-4 overflow-y-auto shrink-0 animate-in slide-in-from-left-4 duration-150">
+            {activeTab === "templates" && (
+              <div className="theme-gallery">
+                <h2>Choose a look</h2><p>Apply a coordinated palette to this page. Your products and layout stay in place.</p>
+                {templates.slice(0, 6).map(t => {
+                  const preview = createDefaultPage(t.name, t.id, true, sampleProducts.slice(0, 6).map(p => ({...p, offer: Math.round(p.price * 80) / 100, badge: ""})));
+                  return <button type="button" key={t.id} aria-pressed={activePage.templateId === t.id} onClick={() => updateActivePage(page => ({...page, templateId: t.id, background: {type: "solid", color: "#f8fafc"}, sections: page.sections.map(sec => sec.type === "hero" ? {...sec, background: {type: "solid", color: t.color}} : sec)}))}>
+                    <div className="theme-preview" dangerouslySetInnerHTML={{__html: renderPageSvg(preview, activeBusiness.profile)}}/><b>{t.name}</b><span>Apply color theme</span>
+                  </button>;
+                })}
+              </div>
+            )}
             {activeTab === "pages" && (
               <PageManager
                 flyer={currentFlyer}
@@ -948,7 +970,7 @@ export default function Studio({ account }: { account: SessionAccount }) {
         {/* Center: Flyer Canvas */}
         <main
           onClick={handleCanvasClick}
-          className="flex-1 flex flex-col items-center justify-start overflow-y-auto p-8 relative bg-slate-100/80 select-none"
+          className="editor-canvas min-w-0 flex-1 flex flex-col items-center justify-start overflow-auto p-6 relative bg-slate-100/80 select-none"
         >
           {/* Page Navigation Indicator */}
           <div className="flex items-center gap-3 bg-white border border-slate-200 px-4 py-1.5 rounded-full shadow-sm mb-5 text-xs font-bold text-slate-700">
@@ -957,7 +979,7 @@ export default function Studio({ account }: { account: SessionAccount }) {
               disabled={clampedPageIndex === 0}
               onClick={(e) => {
                 e.stopPropagation();
-                setActivePageIndex((p) => Math.max(0, p - 1));
+                setActivePageIndex((p) => Math.max(0, p - 1)); setSelectedCellIds([]); setSelectedSectionId(null);
               }}
               className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-20"
             >
@@ -971,7 +993,7 @@ export default function Studio({ account }: { account: SessionAccount }) {
               disabled={clampedPageIndex === currentFlyer.pages.length - 1}
               onClick={(e) => {
                 e.stopPropagation();
-                setActivePageIndex((p) => Math.min(currentFlyer.pages.length - 1, p + 1));
+                setActivePageIndex((p) => Math.min(currentFlyer.pages.length - 1, p + 1)); setSelectedCellIds([]); setSelectedSectionId(null);
               }}
               className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-20"
             >
@@ -979,9 +1001,15 @@ export default function Studio({ account }: { account: SessionAccount }) {
             </button>
           </div>
 
+          <div className="selection-toolbar" onClick={e => e.stopPropagation()}>
+            <button type="button" aria-pressed={multiSelect} onClick={() => setMultiSelect(!multiSelect)}>Multi-select {multiSelect ? "on" : "off"}</button>
+            <button type="button" disabled={!activeGrid} onClick={() => { setSelectedCellIds(activeGrid?.cells.filter(c => !c.hidden).map(c => c.id) || []); setSelectedSectionId(null); }}>Select all cells</button>
+            <button type="button" disabled={!selectedCellIds.length} onClick={() => setSelectedCellIds([])}>Clear</button>
+            <span>{selectedCellIds.length} selected</span>
+          </div>
           {/* SVG Page Canvas */}
           <div
-            className="w-full max-w-[540px] bg-white rounded-lg shadow-2xl overflow-hidden border border-slate-300/80 transition-all duration-150"
+            className="editor-paper w-full max-w-[640px] shrink-0 bg-white shadow-xl overflow-hidden border border-slate-300/80"
             style={{ aspectRatio: "794 / 1123" }}
             dangerouslySetInnerHTML={{ __html: pageSvgString }}
           />
@@ -990,12 +1018,12 @@ export default function Studio({ account }: { account: SessionAccount }) {
           <div className="mt-4 text-xs text-slate-400 flex items-center gap-2">
             <span>A4 Standard Portrait (794 × 1123)</span>
             <span>·</span>
-            <span>Click any cell to edit products or borders</span>
+            <span>Ctrl / ⌘ + click to select · Shift + click for a range</span>
           </div>
         </main>
 
         {/* Right Sidebar: Contextual Inspector */}
-        <aside className="w-80 bg-white border-l border-slate-200 flex flex-col p-4 overflow-y-auto shrink-0">
+        <aside className="editor-inspector w-80 bg-white border-l border-slate-200 flex flex-col p-4 overflow-y-auto shrink-0">
           {selectedCell && activeGrid ? (
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between border-b pb-2">
@@ -1021,8 +1049,8 @@ export default function Studio({ account }: { account: SessionAccount }) {
                     ),
                   }));
                 }}
-                selectedCellIds={selectedCellId ? [selectedCellId] : []}
-                onSelectCells={(ids) => setSelectedCellId(ids[0] || null)}
+                selectedCellIds={selectedCellIds}
+                onSelectCells={setSelectedCellIds}
                 onOpenProductSearch={(cellId) => setProductPickerCellId(cellId)}
                 onOpenBulkFill={() => setBulkFillOpen(true)}
                 currency={activeBusiness.profile?.defaultCurrency || "AED"}
