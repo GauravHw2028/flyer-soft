@@ -7,6 +7,7 @@ import {
   Brand,
   Template,
   defaultBrand,
+  sampleProducts,
   BusinessRecord,
   brandToBusinessProfile,
   migrateCampaignToFlyer,
@@ -39,8 +40,26 @@ export const emptyWorkspace: Workspace = {
   customTemplates: [],
 };
 
+/**
+ * A brand new account has no saved workspace yet. Start it on the bundled
+ * sample catalogue so the item library is usable straight away instead of
+ * empty. This only runs when the server reports no saved workspace; an
+ * existing workspace is never re-seeded.
+ */
+export function starterWorkspace(): Workspace {
+  const products = sampleProducts.map((p) => ({ ...p }));
+  return {
+    ...emptyWorkspace,
+    products,
+    businesses: (emptyWorkspace.businesses || []).map((b) => ({
+      ...b,
+      products: products.map((p) => ({ ...p })),
+    })),
+  };
+}
+
 function normalizeWorkspace(data: Workspace | null): Workspace {
-  if (!data) return emptyWorkspace;
+  if (!data) return starterWorkspace();
 
   let businesses = data.businesses || [];
   let activeBusinessId = data.activeBusinessId || businesses[0]?.id || "biz-default";

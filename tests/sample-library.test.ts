@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { SAMPLE_LIBRARY_VERSION, sampleProducts } from "../app/model";
 import { withSampleLibrary } from "../app/sample-library";
+import { starterWorkspace } from "../app/use-workspace";
 
 const custom = {
   id: "house-brand-oil",
@@ -44,4 +45,13 @@ test("a workspace on the current library keeps its own edits and adds nothing", 
 
 test("a workspace without a business list does not gain an empty one", () => {
   assert.equal(withSampleLibrary({ products: [] }).businesses, undefined);
+});
+
+test("a brand new account starts with the bundled catalogue on its item panel", () => {
+  const starter = starterWorkspace();
+
+  assert.equal(starter.products.length, sampleProducts.length);
+  assert.equal(starter.businesses?.[0].products.length, sampleProducts.length);
+  assert.ok(starter.businesses?.[0].products.some((p) => p.id === "rice"));
+  assert.ok(starter.businesses?.[0].products.some((p) => p.id === "bananas"));
 });
