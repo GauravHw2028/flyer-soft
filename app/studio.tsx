@@ -679,7 +679,7 @@ export default function Studio({ account }: { account: SessionAccount }) {
         </aside>
 
         {/* Left Auxiliary Panel (Based on active tab) */}
-        {activeTab !== "editor" && (
+        {activeTab !== "editor" && activeTab !== "admin" && (
           <aside className="editor-library w-80 bg-white border-r border-slate-200 flex flex-col p-4 overflow-y-auto shrink-0 animate-in slide-in-from-left-4 duration-150">
             {activeTab === "templates" && (
               <div className="theme-gallery">
@@ -961,12 +961,19 @@ export default function Studio({ account }: { account: SessionAccount }) {
               </div>
             )}
 
-            {activeTab === "admin" && (
-              <AdminPanel onPreview={() => toast("Showcase loaded")} />
-            )}
+
           </aside>
         )}
 
+        {activeTab === "admin" ? (
+          <main className="admin-workspace" aria-label="Administration">
+            <div className="admin-workspace-heading">
+              <div><span className="eyebrow">WORKSPACE ADMINISTRATION</span><h1>Manage your customers</h1><p>Business accounts, private templates, and credit requests.</p></div>
+              <button type="button" className="button" onClick={() => setActiveTab("editor")}>Back to flyer</button>
+            </div>
+            <AdminPanel />
+          </main>
+        ) : <>
         {/* Center: Flyer Canvas */}
         <main
           onClick={handleCanvasClick}
@@ -1217,6 +1224,7 @@ export default function Studio({ account }: { account: SessionAccount }) {
             </div>
           )}
         </aside>
+        </>}
       </div>
 
       {/* Fast Product Autocomplete Modal for Single Cell */}

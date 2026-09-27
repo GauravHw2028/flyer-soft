@@ -2,7 +2,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { Template, templates, Product, Offer, Brand } from "./model";
-import { wearMartTemplates } from "./wear-mart";
+import { wearFlyer } from "./wear-flyer";
+import { sampleProducts, Campaign } from "./model";
+import { wearMartTemplates, wearMartBrand } from "./wear-mart";
 import {
   Dialog,
   DialogContent,
@@ -177,7 +179,8 @@ type Business = {
   email: string;
   templates: Template[];
 };
-export function AdminPanel({ onPreview }: { onPreview: () => void }) {
+export function AdminPanel() {
+  const [showcaseOpen, setShowcaseOpen] = useState(false);
   const [state, setState] = useState<{
       businesses: Business[];
       topups: {
@@ -228,7 +231,7 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
     }
   }
   return (
-    <section className="content-surface business-surface">
+    <section className="content-surface business-surface admin-panel">
       <div className="section-title">
         <div>
           <h2>Business accounts</h2>
@@ -250,7 +253,8 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
           + Add business
         </button>
       </div>
-      {error && <p role="alert">{error}</p>}
+      {error && <div className="admin-load-error" role="alert"><span>{error}</span><button type="button" className="button small" onClick={() => void load()}>Retry</button></div>}
+      {!state && !error && <p role="status" className="help-text">Loading customer accounts…</p>}
       <div className="showcase-banner">
         <div>
           <span className="eyebrow">CLIENT SHOWCASE</span>
@@ -259,8 +263,8 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
             10 editable designs, including Paper Adventure and Back to School.
           </p>
         </div>
-        <button className="button" onClick={onPreview}>
-          Open showcase flyer
+        <button className="button" onClick={() => setShowcaseOpen(true)}>
+          Preview collection
         </button>
       </div>
       <div className="flex justify-end gap-2 mb-3">
@@ -314,7 +318,7 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
           </div>
         </div>
       ))}
-      {!state?.businesses.length && (
+      {state && !state.businesses.length && (
         <p className="help-text">
           Add the customer’s real contact email when you onboard them. The
           showcase does not create a fictitious customer account.
@@ -355,7 +359,7 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
           </div>
         </div>
       ))}
-      {!state?.topups.length && (
+      {state && !state.topups.length && (
         <p className="help-text">No payments waiting.</p>
       )}
       {!!state?.jobs.length && (
@@ -379,6 +383,17 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
           ))}
         </>
       )}
+      <Dialog open={showcaseOpen} onOpenChange={setShowcaseOpen}>
+        <DialogContent className="admin-showcase-dialog">
+          <DialogHeader><DialogTitle>Wear Mart collection</DialogTitle><DialogDescription>Preview the 10 private designs. Assign them from Manage templates or Add business.</DialogDescription></DialogHeader>
+          <div className="admin-showcase-grid">
+            {wearMartTemplates.slice(0, 10).map(t => {
+              const campaign: Campaign = {id: "showcase", name: t.name, headline: "Weekly special offers", start: "2026-09-27", end: "2026-10-03", template: t.id, status: "draft", updated: "", brand: wearMartBrand, items: Array.from({length: t.capacity}, (_, i) => ({...sampleProducts[i % sampleProducts.length], id: `sample-${i}`, offer: Math.round(sampleProducts[i % sampleProducts.length].price * 80) / 100, badge: ""}))};
+              return <figure key={t.id}><div dangerouslySetInnerHTML={{__html: wearFlyer(campaign, t, 0, {})}}/><figcaption>{t.name}</figcaption></figure>;
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!draft} onOpenChange={(o) => !o && setDraft(null)}>
         <DialogContent className="wide-dialog">
           <DialogHeader>
@@ -429,7 +444,7 @@ export function AdminPanel({ onPreview }: { onPreview: () => void }) {
                   onClick={() =>
                     setDraft({
                       ...draft,
-                      templates: structuredClone(wearMartTemplates),
+                      templates: structuredClone(wearMartTemplates.slice(0, 10)),
                     })
                   }
                 >
